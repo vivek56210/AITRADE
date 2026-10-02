@@ -47,6 +47,7 @@ export function Badge({ tone = "muted", children, title }: { tone?: Tone; childr
 
 const STATE_TONE: Record<RunState, Tone> = {
   idle: "muted",
+  loading: "info",
   ready: "info",
   running: "good",
   paused: "warn",
@@ -58,7 +59,7 @@ const STATE_TONE: Record<RunState, Tone> = {
 export function StateBadge({ state }: { state: RunState }) {
   return (
     <Badge tone={STATE_TONE[state]}>
-      <span className={`dot ${state === "running" ? "pulse" : ""}`} />
+      <span className={`dot ${state === "running" || state === "loading" ? "pulse" : ""}`} />
       {state}
     </Badge>
   );

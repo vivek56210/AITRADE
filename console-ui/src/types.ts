@@ -1,4 +1,4 @@
-export type RunState = "idle" | "ready" | "running" | "paused" | "stopped" | "finished" | "error";
+export type RunState = "idle" | "loading" | "ready" | "running" | "paused" | "stopped" | "finished" | "error";
 
 export interface Status {
   state: RunState;
@@ -226,10 +226,19 @@ export interface JobSummary {
 
 export interface BacktestResult {
   symbol: string;
+  data_source: string;
+  first: string | null;
+  last: string | null;
   sessions: number;
   signals: number;
   total_r: number;
   win_rate: number | null;
+  avg_r: number | null;
+  profit_factor: number | null;
+  max_drawdown_r: number;
+  premium_trades: number;
+  premium_contained: number;
+  monthly_r: Record<string, number>;
   stats: SetupStat[];
   equity: { n: number; date: string; cum_r: number }[];
   trades: {

@@ -46,7 +46,7 @@ export function BacktestPage({ status, refreshStatus }: PageProps) {
           {anyRunning ? "Backtest running…" : "Run backtest"}
         </button>
         <span className="muted small">
-          Runs in the background on the configured data and settings. Scores futures R multiples and condor containment - not option P&amp;L.
+          Runs in the background on the configured data and settings. Scores R multiples on the underlying (before costs) and condor containment - not option P&amp;L.
         </span>
       </div>
       <ErrorBox error={actionError} />
@@ -81,13 +81,40 @@ export function BacktestPage({ status, refreshStatus }: PageProps) {
           {job?.status === "failed" && <div className="alert bad">Backtest failed: {job.error}</div>}
           {res ? (
             <>
+              <p className="muted small">
+                {res.symbol} · {res.data_source} data · {res.first} → {res.last}. {res.note}.
+              </p>
               <div className="stats-row">
-                <Stat label="Sessions" value={res.sessions} />
-                <Stat label="Signals" value={res.signals} />
-                <Stat label="Total R (directional)" value={fmtR(res.total_r)} tone={res.total_r >= 0 ? "good" : "bad"} />
+                <Stat label="Sessions" value={res.sessions} sub={`${res.signals} signals`} />
+                <Stat label="Total R (directional)" value={fmtR(res.total_r)} tone={res.total_r >= 0 ? "good" : "bad"}
+                  sub={`avg ${fmtR(res.avg_r)} per trade`} />
                 <Stat label="Win rate" value={fmtPct(res.win_rate)} />
+                <Stat label="Profit factor" value={res.profit_factor === null ? "—" : res.profit_factor.toFixed(2)}
+                  tone={(res.profit_factor ?? 0) >= 1 ? "good" : "bad"} />
+                <Stat label="Max drawdown" value={fmtR(res.max_drawdown_r)} tone="bad" />
+                <Stat label="Condors contained" value={res.premium_trades ? `${res.premium_contained}/${res.premium_trades}` : "—"} />
               </div>
               <Card title="Equity curve (cumulative R)"><EquityChart points={res.equity} /></Card>
+              <Card title="Monthly R">
+                {(() => {
+                  const months = Object.entries(res.monthly_r);
+                  const max = Math.max(1, ...months.map(([, v]) => Math.abs(v)));
+                  return months.length ? (
+                    <ul className="months">
+                      {months.map(([m, v]) => (
+                        <li key={m}>
+                          <span className="mono muted">{m}</span>
+                          <span className="month-track">
+                            <span className={`month-bar ${v >= 0 ? "pos" : "neg"}`}
+                              style={{ width: `${(Math.abs(v) / max) * 50}%`, [v >= 0 ? "left" : "right"]: "50%" }} />
+                          </span>
+                          <span className={`mono ${v >= 0 ? "good-text" : "bad-text"}`}>{fmtR(v)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <Empty>No directional trades.</Empty>;
+                })()}
+              </Card>
               <Card title="By setup">
                 <table className="table">
                   <thead>
@@ -124,8 +151,8 @@ export function BacktestPage({ status, refreshStatus }: PageProps) {
                           <td className="muted">{t.structure}</td>
                           <td className="mono">{fmt(t.entry)}</td>
                           <td className="mono">{fmt(t.stop)}</td>
-                          <td className={t.r !== null ? (t.r >= 0 ? "good-text" : "bad-text") : t.contained ? "good-text" : "bad-text"}>
-                            {t.r !== null ? fmtR(t.r) : t.contained ? "contained" : "breached"}
+                          <td className={t.r !== null ? (t.r >= 0 ? "good-text" : "bad-text") : t.contained === null ? "muted" : t.contained ? "good-text" : "bad-text"}>
+                            {t.r !== null ? fmtR(t.r) : t.contained === null ? "—" : t.contained ? "contained" : "breached"}
                           </td>
                           <td className="muted">{t.exit}</td>
                         </tr>

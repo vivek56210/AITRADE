@@ -5,3 +5,4 @@ node_modules/
 src/atis/console/static/
 atis_console.json
 atis_journal.json
+data/

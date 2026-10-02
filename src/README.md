@@ -141,6 +141,18 @@ python -m atis.playbook demo --days 30 --backtest           # synthetic data
 python -m atis.playbook run --csv nifty_fut_1m.csv --symbol NIFTY --iv 0.13 --basis 45 --backtest
 ```
 
+**Real data (no account needed):** `--upstox` downloads 1-minute NIFTY / BANKNIFTY index bars from
+Upstox's public historical API (from 2022-01-01), cached per month under `data/upstox/`:
+
+```bash
+python -m atis.playbook run --upstox --symbol BANKNIFTY --from 2025-10-01 --to 2026-10-01 --backtest
+python -m atis.playbook fetch --symbol NIFTY --from 2025-10-01 --out nifty_1m.csv   # just save a CSV
+```
+
+Index bars carry no volume, so every minute is weighted equally (a time-at-price / TPO profile) and
+order-flow confirmations read `n/a`. Exchange holidays are inferred from gaps in the data and short
+special sessions are dropped. In the console, set **Settings → Data source = upstox** with a date range.
+
 CSV columns: `timestamp,open,high,low,close,volume[,buy_volume,sell_volume]` (IST). Without
 buy/sell volume, order flow is estimated with the tick rule and delta-divergence confirmation is
 reported as `n/a`. Without `--iv`, option premiums are not priced and sizing falls back to an

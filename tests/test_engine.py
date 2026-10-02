@@ -72,6 +72,15 @@ def test_a3_ib_breakout_long(make_engine):
     assert [t.label for t in sig.targets] == ["prior day extreme", "2x IB (Normal Variation target)"]
 
 
+def test_breakout_beyond_all_targets_gets_a_1r_target(make_engine):
+    wps = [("09:15", 24000), ("09:20", 24060)] + rotation("09:25", "10:15", 24040, 24060, step=5, start_high=False) \
+        + [("10:40", 24210), ("10:45", 24200)]
+    rep = make_engine().run_session(path_session(TODAY, wps))
+    (sig,) = signals(rep, "A3")
+    assert len(sig.targets) == 1 and sig.targets[0].label.startswith("1R")
+    assert sig.targets[0].price == sig.entry + (sig.entry - sig.stop)
+
+
 def test_b1_failed_gap_short(make_engine):
     wps = [("09:15", 24150), ("09:17", 24190), ("09:19", 24150)] \
         + rotation("09:21", "09:29", 24140, 24150, step=2) + [("09:44", 24080), ("10:30", 24040)]

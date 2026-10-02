@@ -14,7 +14,7 @@ import time as _time
 import traceback
 import uuid
 from collections import Counter, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
@@ -22,7 +22,8 @@ from typing import Any
 
 from ..playbook.backtest import backtest
 from ..playbook.config import INSTRUMENTS
-from ..playbook.data import load_csv, synthetic_sessions, to_sessions
+from ..playbook.data import load_csv, prepare_sessions, synthetic_sessions
+from ..playbook.upstox import fetch_index_1m
 from ..playbook.engine import PlaybookEngine, SessionReport, infer_bar_minutes
 from ..playbook.models import Session, SetupSignal
 from ..playbook.report import to_jsonable
@@ -43,6 +44,7 @@ class RunState(str, Enum):
     STOPPED = "stopped"
     FINISHED = "finished"
     ERROR = "error"
+    LOADING = "loading"
 
 
 class ConflictError(RuntimeError):
@@ -110,6 +112,7 @@ class Runtime:
         self.state = RunState.IDLE
         self.applied: dict[str, Any] | None = None
         self.sessions: list[Session] = []
+        self.data_holidays: frozenset[date] = frozenset()
         self.engine: PlaybookEngine | None = None
         self.session_idx = 0
         self.bar_idx = 0
@@ -150,46 +153,63 @@ class Runtime:
     # ---- data / engine ---------------------------------------------------------------------
 
     def _context(self) -> DayContext:
-        return self.settings.context.to_day_context()
+        ctx = self.settings.context.to_day_context()
+        return replace(ctx, holidays=ctx.holidays | self.data_holidays)
 
-    def _make_sessions(self, s: ConsoleSettings) -> list[Session]:
-        if s.data_source == "csv":
-            sessions = to_sessions(load_csv(Path(s.csv_path).expanduser()), s.times.open, s.times.close)
-        else:
+    def _make_sessions(self, s: ConsoleSettings) -> tuple[list[Session], frozenset[date]]:
+        """Sessions plus exchange holidays inferred from gaps in the data. May download (slow)."""
+        if s.data_source == "synthetic":
             base = 24000.0 if s.symbol == "NIFTY" else 52000.0
             sessions = synthetic_sessions(date.fromisoformat(s.synthetic_start), s.synthetic_days,
                                           base=base, seed=s.synthetic_seed)
+            holidays: frozenset[date] = frozenset()
+        else:
+            if s.data_source == "csv":
+                bars = load_csv(Path(s.csv_path).expanduser())
+            else:
+                end = date.fromisoformat(s.upstox_to) if s.upstox_to else date.today()
+                bars = fetch_index_1m(s.symbol, date.fromisoformat(s.upstox_from), end,
+                                      Path(s.data_cache).expanduser(),
+                                      on_month=lambda m, n: self.log("info", "data", f"{s.symbol} {m:%Y-%m}: {n} bars"))
+            sessions, holidays = prepare_sessions(bars, s.times.open, s.times.close)
         if len(sessions) < 2:
             raise ValueError("need at least 2 sessions of data (1 for history, 1 to trade)")
-        return sessions
+        return sessions, holidays
 
     def _make_engine(self, s: ConsoleSettings) -> PlaybookEngine:
         return PlaybookEngine(INSTRUMENTS[s.symbol], s.params, s.times, s.risk,
                               disabled_setups=s.disabled_setups)
 
     def _load(self) -> None:
-        s = self.settings
-        self.sessions = self._make_sessions(s)
-        self.engine = self._make_engine(s)
-        self.warmup = min(s.warmup_sessions, len(self.sessions) - 1)
-        ctx = self._context()
-        self.engine.run(self.sessions[:self.warmup], {x.date: ctx for x in self.sessions}, warmup=self.warmup)
-        self.session_idx, self.bar_idx, self.in_session = self.warmup, 0, False
-        self.reports, self.bars_processed, self.last_bar_ts, self.last_error = [], 0, None, None
-        self.applied = settings_to_dict(s)
-        self.state = RunState.READY
-        self.log("info", "data", f"loaded {len(self.sessions)} {s.symbol} sessions "
-                 f"({s.data_source}); {self.warmup} used as history",
-                 first=self.sessions[0].date, last=self.sessions[-1].date)
-
-    def _safe_load(self) -> None:
+        """Load data with the current settings. Call without holding the lock: a download can take a while."""
+        with self._lock:
+            if self.state == RunState.LOADING:
+                raise ConflictError("data is already loading")
+            self.state = RunState.LOADING
+            self.rate = 0.0
+            s = settings_from_dict(settings_to_dict(self.settings))
+            self.log("info", "data", f"loading {s.symbol} sessions ({s.data_source})...")
         try:
-            self._load()
+            sessions, holidays = self._make_sessions(s)
         except Exception as exc:
-            self.state = RunState.ERROR
-            self.last_error = f"{type(exc).__name__}: {exc}"
-            self.log("error", "data", f"failed to load data: {self.last_error}")
+            with self._lock:
+                self.state = RunState.ERROR
+                self.last_error = f"{type(exc).__name__}: {exc}"
+                self.log("error", "data", f"failed to load data: {self.last_error}")
             raise
+        with self._lock:
+            self.sessions, self.data_holidays = sessions, holidays
+            self.engine = self._make_engine(s)
+            self.warmup = min(s.warmup_sessions, len(sessions) - 1)
+            ctx = self._context()
+            self.engine.run(sessions[:self.warmup], {x.date: ctx for x in sessions}, warmup=self.warmup)
+            self.session_idx, self.bar_idx, self.in_session = self.warmup, 0, False
+            self.reports, self.bars_processed, self.last_bar_ts, self.last_error = [], 0, None, None
+            self.applied = settings_to_dict(s)
+            self.state = RunState.READY
+            self.log("info", "data", f"loaded {len(sessions)} {s.symbol} sessions ({s.data_source}); "
+                     f"{self.warmup} used as history, {len(holidays)} holidays inferred",
+                     first=sessions[0].date, last=sessions[-1].date)
 
     def _advance(self) -> bool:
         """Process one bar. Returns False when there is nothing more to process."""
@@ -284,10 +304,16 @@ class Runtime:
 
     # ---- control actions -------------------------------------------------------------------
 
-    def start(self) -> None:
+    def _needs_load(self) -> bool:
         with self._lock:
-            if self.state in (RunState.IDLE, RunState.STOPPED, RunState.FINISHED, RunState.ERROR):
-                self._safe_load()
+            if self.state == RunState.LOADING:
+                raise ConflictError("data is still loading")
+            return self.state in (RunState.IDLE, RunState.STOPPED, RunState.FINISHED, RunState.ERROR)
+
+    def start(self) -> None:
+        if self._needs_load():
+            self._load()
+        with self._lock:
             if self.state in (RunState.READY, RunState.PAUSED):
                 self.state = RunState.RUNNING
                 self.log("info", "control", "replay started")
@@ -302,23 +328,23 @@ class Runtime:
 
     def stop(self) -> None:
         with self._lock:
-            if self.state in (RunState.IDLE, RunState.STOPPED):
-                raise ConflictError(f"already {self.state.value}")
+            if self.state in (RunState.IDLE, RunState.STOPPED, RunState.LOADING):
+                raise ConflictError(f"cannot stop while {self.state.value}")
             self.state = RunState.STOPPED
             self.rate = 0.0
             self.log("info", "control", "replay stopped (results kept until the next start)")
 
     def reset(self) -> None:
-        with self._lock:
-            self._safe_load()
-            self.log("info", "control", "reset: data reloaded with current settings")
+        self._load()
+        self.log("info", "control", "reset: data reloaded with current settings")
 
     def step(self, count: int = 1) -> int:
         with self._lock:
             if self.state == RunState.RUNNING:
                 raise ConflictError("pause the replay before stepping")
-            if self.state in (RunState.IDLE, RunState.STOPPED, RunState.FINISHED, RunState.ERROR):
-                self._safe_load()
+        if self._needs_load():
+            self._load()
+        with self._lock:
             done = 0
             for _ in range(max(1, min(count, 5000))):
                 if not self._advance():
@@ -389,10 +415,11 @@ class Runtime:
     def _run_backtest(self, job: Job, s: ConsoleSettings) -> None:
         job.status, job.started = "running", _time.time()
         try:
-            sessions = self._make_sessions(s)
+            sessions, holidays = self._make_sessions(s)
             warmup = min(s.warmup_sessions, len(sessions) - 1)
             job.total = len(sessions) - warmup
             ctx = s.context.to_day_context()
+            ctx = replace(ctx, holidays=ctx.holidays | holidays)
 
             def progress(done: int, total: int) -> None:
                 job.done = done
@@ -415,13 +442,17 @@ class Runtime:
             stats = [{"setup": k, "trades": v.trades, "win_rate": v.win_rate, "avg_r": v.avg_r,
                       "total_r": round(v.total_r, 3), "premium_trades": v.premium_trades,
                       "containment_rate": v.containment_rate} for k, v in res.stats.items()]
-            directional = [t for t in trades if t["r"] is not None]
+            sm = res.summary()
             job.result = {
-                "symbol": s.symbol, "sessions": len(res.reports), "signals": len(trades),
-                "total_r": round(cum, 3),
-                "win_rate": (sum(t["r"] > 0 for t in directional) / len(directional)) if directional else None,
+                "symbol": s.symbol, "data_source": s.data_source,
+                "first": res.reports[0].date.isoformat() if res.reports else None,
+                "last": res.reports[-1].date.isoformat() if res.reports else None,
+                "sessions": sm["sessions"], "signals": sm["signals"], "total_r": sm["total_r"],
+                "win_rate": sm["win_rate"], "avg_r": sm["avg_r"], "profit_factor": sm["profit_factor"],
+                "max_drawdown_r": sm["max_drawdown_r"], "premium_trades": sm["premium_trades"],
+                "premium_contained": sm["premium_contained"], "monthly_r": sm["monthly_r"],
                 "stats": stats, "equity": curve, "trades": trades,
-                "note": "futures replay: R multiples and condor containment, not option P&L",
+                "note": "replay of the underlying: R multiples before costs and condor containment, not option P&L",
             }
             job.status = "done"
             self.last_backtest = job.id

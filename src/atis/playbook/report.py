@@ -96,11 +96,22 @@ def format_report(rep: SessionReport) -> str:
 
 
 def format_backtest(res: BacktestResult) -> str:
-    lines = ["=== Backtest (futures replay; not option P&L) ===",
-             f"sessions {len(res.reports)}, signals {len(res.outcomes)}"]
+    sm = res.summary()
+    lines = ["=== Backtest (underlying replay, R multiples before costs; not option P&L) ===",
+             f"sessions {sm['sessions']}, signals {sm['signals']}"]
+    if sm["directional_trades"]:
+        pf = f"{sm['profit_factor']:.2f}" if sm["profit_factor"] is not None else "n/a"
+        lines.append(f"directional {sm['directional_trades']}: total {sm['total_r']:+.2f}R, "
+                     f"win {sm['win_rate']:.0%}, avg {sm['avg_r']:+.3f}R, PF {pf}, "
+                     f"max drawdown {sm['max_drawdown_r']:.2f}R")
+    if sm["premium_trades"]:
+        lines.append(f"premium {sm['premium_trades']}: contained {sm['premium_contained']}")
+    lines.append("by setup:")
     for sid, s in res.stats.items():
         if s.trades:
             lines.append(f"  {sid}: {s.trades} trades, win {s.win_rate:.0%}, avg {s.avg_r:+.2f}R, total {s.total_r:+.2f}R")
         if s.premium_trades:
             lines.append(f"  {sid}: {s.premium_trades} premium trades, contained {s.containment_rate:.0%}")
+    if sm["monthly_r"]:
+        lines.append("monthly R: " + ", ".join(f"{k} {v:+.1f}" for k, v in sm["monthly_r"].items()))
     return "\n".join(lines)

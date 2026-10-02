@@ -33,8 +33,9 @@ export function ControlBar({ status, onChange }: { status: Status | null; onChan
   if (!status) return <div className="controlbar">Connecting to the console API…</div>;
   const s = status;
   const running = s.state === "running";
+  const loading = s.state === "loading";
   const paused = s.state === "paused";
-  const canStep = !running;
+  const canStep = !running && !loading;
   const sessionProgress = s.sessions_total ? (s.sessions_done + (s.bars_in_session ? s.bar_index / s.bars_in_session : 0)) / s.sessions_total : 0;
 
   return (
@@ -56,7 +57,9 @@ export function ControlBar({ status, onChange }: { status: Status | null; onChan
         </div>
       </div>
       <div className="cb-actions">
-        {running ? (
+        {loading ? (
+          <button className="btn" disabled>Loading data…</button>
+        ) : running ? (
           <button className="btn warn" disabled={busy} onClick={() => act(() => api.control("pause"))}>❚❚ Pause</button>
         ) : paused ? (
           <button className="btn good" disabled={busy} onClick={() => act(() => api.control("resume"))}>▶ Resume</button>
@@ -67,8 +70,8 @@ export function ControlBar({ status, onChange }: { status: Status | null; onChan
         )}
         <button className="btn" disabled={busy || !canStep} onClick={() => act(() => api.step(1))} title="Process one bar">Step 1</button>
         <button className="btn" disabled={busy || !canStep} onClick={() => act(() => api.step(30))} title="Process 30 bars">+30</button>
-        <button className="btn" disabled={busy || s.state === "idle" || s.state === "stopped"} onClick={() => act(() => api.control("stop"))}>■ Stop</button>
-        <button className="btn ghost" disabled={busy} onClick={() => act(() => api.control("reset"))}
+        <button className="btn" disabled={busy || loading || s.state === "idle" || s.state === "stopped"} onClick={() => act(() => api.control("stop"))}>■ Stop</button>
+        <button className="btn ghost" disabled={busy || loading} onClick={() => act(() => api.control("reset"))}
           title="Reload data with the current settings">↺ Reset</button>
         <select aria-label="Replay speed" value={s.replay_speed} disabled={busy}
           onChange={(e) => act(() => api.speed(Number(e.target.value)))}>

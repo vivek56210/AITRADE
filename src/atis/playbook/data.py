@@ -7,6 +7,7 @@ import math
 import random
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -43,6 +44,42 @@ def to_sessions(bars: Iterable[Bar], start: time = time(9, 15), end: time = time
         if start <= b.ts.time() < end:
             by_day[b.ts.date()].append(b)
     return [Session(d, sorted(bs, key=lambda b: b.ts)) for d, bs in sorted(by_day.items())]
+
+
+def time_weighted(bars: list[Bar]) -> list[Bar]:
+    """Spot indices carry no volume: weight every bar equally so profiles become time-at-price (TPO)."""
+    if bars and all(b.volume <= 0 for b in bars):
+        return [replace(b, volume=1.0) for b in bars]
+    return bars
+
+
+def drop_short_sessions(sessions: list[Session], min_fraction: float = 0.8) -> list[Session]:
+    """Drop special sessions (e.g. Muhurat trading) far shorter than a normal day."""
+    if not sessions:
+        return sessions
+    counts = sorted(len(s.bars) for s in sessions)
+    median = counts[len(counts) // 2]
+    return [s for s in sessions if len(s.bars) >= min_fraction * median]
+
+
+def infer_holidays(sessions: list[Session]) -> frozenset[date]:
+    """Weekdays inside the data's date range with no session are treated as exchange holidays."""
+    if not sessions:
+        return frozenset()
+    have = {s.date for s in sessions}
+    out, d = set(), sessions[0].date
+    while d <= sessions[-1].date:
+        if d.weekday() < 5 and d not in have:
+            out.add(d)
+        d += timedelta(days=1)
+    return frozenset(out)
+
+
+def prepare_sessions(bars: list[Bar], start: time = time(9, 15),
+                     end: time = time(15, 30)) -> tuple[list[Session], frozenset[date]]:
+    """Bars -> clean sessions plus the exchange holidays inferred from gaps."""
+    sessions = drop_short_sessions(to_sessions(time_weighted(bars), start, end))
+    return sessions, infer_holidays(sessions)
 
 
 def write_csv(path: str | Path, bars: Iterable[Bar]) -> None:

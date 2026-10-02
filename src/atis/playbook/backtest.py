@@ -54,6 +54,28 @@ class BacktestResult:
     outcomes: list[TradeOutcome]
     stats: dict[str, SetupStats] = field(default_factory=dict)
 
+    def summary(self) -> dict:
+        """Totals over directional trades (R) plus premium containment, drawdown and monthly R."""
+        rs = [(o.signal.ts, o.r_multiple) for o in self.outcomes if o.r_multiple is not None]
+        cum = peak = max_dd = 0.0
+        monthly: dict[str, float] = defaultdict(float)
+        for ts, r in rs:
+            cum += r
+            peak = max(peak, cum)
+            max_dd = min(max_dd, cum - peak)
+            monthly[ts.strftime("%Y-%m")] += r
+        gains = sum(r for _, r in rs if r > 0)
+        losses = -sum(r for _, r in rs if r < 0)
+        premium = [o for o in self.outcomes if o.contained is not None]
+        return {
+            "sessions": len(self.reports), "signals": len(self.outcomes), "directional_trades": len(rs),
+            "total_r": round(cum, 3), "win_rate": sum(r > 0 for _, r in rs) / len(rs) if rs else None,
+            "avg_r": cum / len(rs) if rs else None, "profit_factor": gains / losses if losses else None,
+            "max_drawdown_r": round(max_dd, 3), "premium_trades": len(premium),
+            "premium_contained": sum(bool(o.contained) for o in premium),
+            "monthly_r": {k: round(v, 2) for k, v in sorted(monthly.items())},
+        }
+
 
 def simulate_directional(sig: SetupSignal, bars: list[Bar]) -> TradeOutcome:
     sgn = sig.direction.sign

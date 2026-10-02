@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from .config import CostParams, InstrumentSpec, PlaybookParams, RiskParams, SessionTimes
 from .expiry import is_monthly_expiry_day, nearest_expiry, sessions_until
 from .models import (Bar, Candidate, DayType, IBClass, OpenLocation, OpenType, PeriodStat, Session,
-                     SetupSignal)
+                     SetupSignal, Target)
 from .options import OptionPlanner
 from .orderflow import bar_delta
 from .risk import round_trip_costs, size_trade
@@ -288,6 +288,10 @@ class PlaybookEngine:
     def _build_signal(self, cand: Candidate, bar: Bar) -> SetupSignal:
         st = self._st
         notes = list(cand.notes)
+        sgn = cand.direction.sign
+        if sgn and cand.stop is not None and not cand.targets:
+            risk = abs(cand.entry - cand.stop)
+            cand.targets = [Target(round(cand.entry + sgn * risk, 2), "1R (price already beyond structural targets)", 100.0)]
         if st.is_expiry and not cand.structure.is_short_premium \
                 and st.now > st.at(self.times.expiry_buy_only_breakout_after):
             cand.size_multiplier *= 0.5
