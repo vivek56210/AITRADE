@@ -1,7 +1,8 @@
 # ATIS — Autonomous Trading Intelligence Platform
 
-> **Status: DESIGN PHASE — no code exists yet.** These documents are the complete architecture
-> and phase plan, written for review. Implementation begins only after sign-off on this doc set.
+> **Status: DESIGN PHASE.** These documents are the complete architecture and phase plan, written
+> for review. The only code so far is the volume-profile playbook detectors (`src/atis/playbook`,
+> see [Code](#code-volume-profile-playbook) below) — recommendation mode only, all setups CANDIDATE.
 >
 > Doc set version: **v0.2-draft** (validation pass applied — see [docs/09-VALIDATION-REVIEW.md](docs/09-VALIDATION-REVIEW.md)) · Date: 2026-07-11 · Markets: Indian Equities, Indian F&O, Crypto, Commodities (MCX)
 
@@ -44,6 +45,7 @@ that default safe, explainable, and positive-expectancy.
 | 7 | [docs/07-EXECUTION-ENGINE.md](docs/07-EXECUTION-ENGINE.md) | Operating modes, order lifecycle, execution algos, broker adapter layer, safety pipeline, live trade management, TCA, reconciliation, failure recovery |
 | 8 | [docs/08-IMPLEMENTATION-ROADMAP.md](docs/08-IMPLEMENTATION-ROADMAP.md) | Phase-wise roadmap with exit gates, testing strategy, governance and audit framework, DR plan, cost bands, operating rituals, risk register |
 | 9 | [docs/09-VALIDATION-REVIEW.md](docs/09-VALIDATION-REVIEW.md) | **The validation audit**: 21 internal findings (3 HIGH), externally verified July-2026 facts with sources (SEBI algo framework, F&O regime, crypto tax/venues, broker APIs, data vendors), rejected alternatives, residual risks, v0.1→v0.2 change log |
+| 10 | [docs/10-VOLUME-PROFILE-PLAYBOOK.md](docs/10-VOLUME-PROFILE-PLAYBOOK.md) | Market/volume-profile setups for NIFTY & BANKNIFTY options (Oct 2026): setups A1–A5, B1–B4, C1–C3, D1–D2, India expiry/lot/STT/CAS rules, risk rules — the spec for `src/atis/playbook` |
 
 *Note: `05-RISK-PORTFOLIO.md` was added beyond the originally listed six phase docs — risk is an
 independent function in institutional design and warrants its own specification.*
@@ -122,6 +124,28 @@ independent function in institutional design and warrants its own specification.
   framework mechanics incl. the 10-orders/sec threshold, verified expiry/lot/margin regime,
   crypto derivatives-first tax posture on FIU venues, broker API and data-vendor realities).
   Full findings, sources, and per-doc changes in [docs/09-VALIDATION-REVIEW.md](docs/09-VALIDATION-REVIEW.md).
+
+## Code: volume-profile playbook
+
+`src/atis/playbook` implements [docs/10](docs/10-VOLUME-PROFILE-PLAYBOOK.md) in dependency-free
+Python (3.11+). It reads **current-month index futures bars** (spot has no volume), builds the
+prior-day and developing volume/TPO profile (POC, VAH/VAL, HVN/LVN, IB, tails, poor extremes,
+single prints, composite balance), classifies open type and day type, and runs the setup detectors
+bar by bar. Each signal carries the futures entry/stop/targets, the option structure (ATM/ITM buy,
+debit spread, credit spread, iron condor/fly with strikes beyond profile levels), lot sizing from the
+risk rules, an exit-by time, and the reasons any setup was skipped. It never places orders.
+
+```bash
+pip install -e '.[dev]' && pytest
+python -m atis.playbook demo --days 30 --backtest           # synthetic data
+python -m atis.playbook run --csv nifty_fut_1m.csv --symbol NIFTY --iv 0.13 --basis 45 --backtest
+```
+
+CSV columns: `timestamp,open,high,low,close,volume[,buy_volume,sell_volume]` (IST). Without
+buy/sell volume, order flow is estimated with the tick rule and delta-divergence confirmation is
+reported as `n/a`. Without `--iv`, option premiums are not priced and sizing falls back to an
+assumed delta. The backtest scores futures R-multiples and condor containment — **not option P&L**.
+Every threshold lives in `config.py` as a proposed default (P).
 
 ## After review
 
