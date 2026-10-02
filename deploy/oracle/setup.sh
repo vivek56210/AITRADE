@@ -26,7 +26,7 @@ warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31mxx %s\033[0m\n' "$*" >&2; exit 1; }
 ask()  { local v; read -r -p "$1" v </dev/tty; printf '%s' "$v"; }
 ask_secret() { local v; read -r -s -p "$1" v </dev/tty; echo >/dev/tty; printf '%s' "$v"; }
-env_get() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | tail -1 || true; }
+env_get() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | tail -1 | sed 's/^"\(.*\)"$/\1/' || true; }
 
 [ "$(id -u)" -eq 0 ] || die "run with sudo: sudo bash $0"
 . /etc/os-release
@@ -96,7 +96,7 @@ cat > "$ENV_FILE" <<EOF
 TELEGRAM_BOT_TOKEN=$TOKEN
 TELEGRAM_CHAT_ID=$CHAT
 # Extra atis-live options, e.g. --capital 500000 --risk-pct 1 --disable B1,C2
-ATIS_LIVE_ARGS=$LIVE_ARGS
+ATIS_LIVE_ARGS="$LIVE_ARGS"
 PYTHONUNBUFFERED=1
 EOF
 chown root:atis "$ENV_FILE" && chmod 640 "$ENV_FILE"

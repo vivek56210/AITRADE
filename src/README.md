@@ -241,6 +241,7 @@ React + TypeScript UI from `console-ui/` (the documented ops-console stack, 01 Â
 
 | Page | What it shows / does |
 |---|---|
+| Live alerts | The Telegram runner's status and heartbeat, today's index chart with levels and signals, the paper-trade journal with results by setup and by day (reads `data/live`, written by `atis-live`) |
 | Dashboard | Engine state, replay progress, today's structure (open type, IB, day type, dPOC, VA), live mini-chart, recent signals, activity feed, plan warnings, last backtest equity |
 | Market | Futures candles with prior VA/POC/H/L, IB, dPOC, HVN/LVN, single prints, composite balance overlays; today's and prior volume profile; signal markers; pre-market plan; skip reasons; any past session |
 | Setups | All 13 setups with rules, today's status (fired / skipped + reason / watching), counts, backtest stats, and an on/off switch that applies on the next bar |
@@ -259,8 +260,39 @@ atis-console                                              # http://127.0.0.1:876
 ```
 
 For UI development run `atis-console` and `npm run dev` in `console-ui/` (Vite proxies `/api`).
-The console binds to 127.0.0.1 and has no login, so do not expose it on a network. Data comes from
-replaying CSV or synthetic sessions; a live broker feed is not wired in yet.
+The console binds to 127.0.0.1 and has no login, so do not expose it on a network directly; the
+Oracle setup below puts HTTPS and a password in front of it.
+
+### Live Telegram alerts (paper trading)
+
+`atis-live` runs the same engine on today's 1-minute NIFTY/BANKNIFTY index candles. It uses the
+Upstox public intraday feed, polled every 15 s, and sends each setup to Telegram as it fires. It
+never places orders.
+
+```bash
+export TELEGRAM_BOT_TOKEN=...   # from @BotFather; never commit or paste it anywhere else
+atis-live telegram-chat-id      # after sending your bot a message: prints TELEGRAM_CHAT_ID=...
+export TELEGRAM_CHAT_ID=...
+atis-live telegram-test         # sends a test message
+atis-live run                   # waits for 09:05 IST, alerts until 15:30, day summary, exits
+atis-live replay --date 2026-10-01 --dry-run   # a past day through the same code, printed
+atis-live summary               # paper results so far
+```
+
+The runner skips weekends and holidays. Holidays are inferred from shifted option expiries in the
+exchange scrip master. The runner warns on a stale feed, survives restarts without resending, and
+writes a snapshot, a heartbeat and a journal to `data/live` for the console's Live alerts page.
+
+### Run it on an Oracle Cloud Always Free VM
+
+[deploy/oracle/README.md](../deploy/oracle/README.md) is a step-by-step guide covering the account,
+the VM, the Telegram bot and the firewall. Then one command,
+`sudo bash atis-setup.sh`, sets everything up:
+
+- systemd services
+- a weekday 08:55 IST timer
+- Caddy with automatic HTTPS on `<ip>.sslip.io` and a password
+- the VM firewall
 
 ## After review
 
