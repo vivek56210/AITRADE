@@ -171,3 +171,18 @@ def test_run_after_close_exits_without_messages(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "load_expiry_holidays", lambda d, t: (frozenset(), "test"))
     assert cli.main(["run", "--dry-run", "--state-dir", str(tmp_path)]) == 0
     assert "already closed" in capsys.readouterr().err and not list(tmp_path.glob("state-*"))
+
+
+def test_find_chat_ids_wrong_token_is_a_clean_error():
+    import urllib.error
+
+    import pytest
+
+    from atis.live.telegram import TelegramError
+
+    def post(url, payload):
+        raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
+
+    with pytest.raises(TelegramError, match="rejected") as exc:
+        find_chat_ids("123:SECRET", post=post)
+    assert "SECRET" not in str(exc.value)

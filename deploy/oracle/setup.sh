@@ -18,7 +18,7 @@ BRANCH="${ATIS_BRANCH:-claude/sweet-dirac-l8xhkg}"
 APP_DIR=/opt/atis
 DATA_DIR=/var/lib/atis
 ENV_FILE=/etc/atis/atis.env
-CADDY_AUTH_FILE=/etc/atis/caddy-auth
+CADDY_AUTH_FILE=/etc/caddy/atis-auth  # Caddy can't enter /etc/atis
 PORT=8765
 
 say()  { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }

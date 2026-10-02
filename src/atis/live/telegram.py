@@ -86,7 +86,13 @@ def notifier_from_env(dry_run: bool = False):
 
 def find_chat_ids(token: str, post: Callable[[str, dict], dict] = _post_json) -> list[tuple[str, str]]:
     """Chats that recently messaged the bot: send any message to it first, then call this."""
-    res = post(f"{API}/bot{token}/getUpdates", {})
+    try:
+        res = post(f"{API}/bot{token}/getUpdates", {})
+    except OSError as exc:  # HTTPError (401 = wrong token) and network errors; the URL holds the token
+        code = getattr(exc, "code", None)
+        raise TelegramError("bot token rejected by Telegram (401) - check it with BotFather" if code == 401
+                            else f"could not reach Telegram ({type(exc).__name__}{f' {code}' if code else ''})"
+                            ) from None
     if not res.get("ok"):
         raise TelegramError(res.get("description", "getUpdates failed"))
     seen: dict[str, str] = {}
