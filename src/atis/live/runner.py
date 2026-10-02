@@ -97,9 +97,12 @@ class LiveRunner:
         ctx = DayContext(holidays=data_holidays | self.extra_holidays)
         return Book(symbol, engine), ctx
 
+    def is_trading_day(self, day: date) -> bool:
+        return day.weekday() < 5 and day not in self.extra_holidays
+
     def run_day(self, day: date) -> dict[str, tuple[SessionReport | None, list[TradeOutcome]]]:
         t = self.cfg.times
-        if day.weekday() >= 5 or day in self.extra_holidays:
+        if not self.is_trading_day(day):
             self.log(f"{day} is not a trading day; nothing to do")
             return {}
         state = self._load_state(day)

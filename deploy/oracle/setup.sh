@@ -235,7 +235,11 @@ sudo -u atis env PYTHONPATH= "$VENV/python" - <<'EOF' || warn "market data check
 from datetime import date, timedelta
 from pathlib import Path
 from atis.playbook.upstox import fetch_index_1m
-bars = fetch_index_1m("NIFTY", date.today() - timedelta(days=7), date.today() - timedelta(days=1), Path("/var/lib/atis/data/upstox"))
+try:
+    bars = fetch_index_1m("NIFTY", date.today() - timedelta(days=7), date.today() - timedelta(days=1),
+                          Path("/var/lib/atis/data/upstox"))
+except Exception as exc:
+    raise SystemExit(f"market data: FAILED ({type(exc).__name__}: {exc})")
 print(f"market data: ok ({len(bars)} NIFTY 1-minute bars for the last week)")
 EOF
 TELEGRAM_BOT_TOKEN="$(env_get TELEGRAM_BOT_TOKEN)" TELEGRAM_CHAT_ID="$(env_get TELEGRAM_CHAT_ID)" \
@@ -255,5 +259,5 @@ $(printf '\033[1;32m')ATIS is set up.$(printf '\033[0m')
     systemctl status atis-live atis-console    service state
     journalctl -u atis-live -f                 today's live log
     sudo atis-update                           pull the latest code and restart
-    sudo nano $ENV_FILE                        change options, then: sudo systemctl restart atis-console
+    sudo nano $ENV_FILE                 change options, then: sudo systemctl restart atis-console
 EOF

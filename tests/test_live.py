@@ -171,6 +171,11 @@ def test_run_after_close_exits_without_messages(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "load_expiry_holidays", lambda d, t: (frozenset(), "test"))
     assert cli.main(["run", "--dry-run", "--state-dir", str(tmp_path)]) == 0
     assert "already closed" in capsys.readouterr().err and not list(tmp_path.glob("state-*"))
+    saturday = datetime(2026, 10, 3, 6, 0)
+    monkeypatch.setattr(cli.SystemClock, "now", lambda self: saturday)
+    monkeypatch.setattr(cli.SystemClock, "sleep", lambda self, s: (_ for _ in ()).throw(AssertionError("slept")))
+    assert cli.main(["run", "--dry-run", "--state-dir", str(tmp_path)]) == 0
+    assert "not a trading day" in capsys.readouterr().err
 
 
 def test_find_chat_ids_wrong_token_is_a_clean_error():
