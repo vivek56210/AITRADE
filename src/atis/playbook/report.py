@@ -14,23 +14,23 @@ from .models import SetupSignal
 from .profile import VolumeProfile
 
 
-def _jsonable(obj: Any) -> Any:
+def to_jsonable(obj: Any) -> Any:
     if dataclasses.is_dataclass(obj):
-        return {f.name: _jsonable(getattr(obj, f.name)) for f in dataclasses.fields(obj)
+        return {f.name: to_jsonable(getattr(obj, f.name)) for f in dataclasses.fields(obj)
                 if not isinstance(getattr(obj, f.name), VolumeProfile)}
     if isinstance(obj, Enum):
         return obj.value
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     if isinstance(obj, (list, tuple)):
-        return [_jsonable(x) for x in obj]
+        return [to_jsonable(x) for x in obj]
     if isinstance(obj, dict):
-        return {str(k): _jsonable(v) for k, v in obj.items()}
+        return {str(k): to_jsonable(v) for k, v in obj.items()}
     return obj
 
 
 def to_json(obj: Any) -> str:
-    return json.dumps(_jsonable(obj), indent=2)
+    return json.dumps(to_jsonable(obj), indent=2)
 
 
 def format_plan(plan: PremarketPlan) -> str:

@@ -147,6 +147,34 @@ reported as `n/a`. Without `--iv`, option premiums are not priced and sizing fal
 assumed delta. The backtest scores futures R-multiples and condor containment — **not option P&L**.
 Every threshold lives in `config.py` as a proposed default (P).
 
+### Operator console (UI)
+
+`src/atis/console` (FastAPI) runs the engine in a background **replay worker** and serves the
+React + TypeScript UI from `console-ui/` (the documented ops-console stack, 01 §9):
+
+| Page | What it shows / does |
+|---|---|
+| Dashboard | Engine state, replay progress, today's structure (open type, IB, day type, dPOC, VA), live mini-chart, recent signals, activity feed, plan warnings, last backtest equity |
+| Market | Futures candles with prior VA/POC/H/L, IB, dPOC, HVN/LVN, single prints, composite balance overlays; today's and prior volume profile; signal markers; pre-market plan; skip reasons; any past session |
+| Setups | All 13 setups with rules, today's status (fired / skipped + reason / watching), counts, backtest stats, and an on/off switch that applies on the next bar |
+| Signals | Every signal with futures plan, option legs, sizing, confirmations; mark **taken / ignored** with a note (persisted journal); CSV export |
+| Backtest | Run a backtest as a background job (progress, cancel), equity curve, per-setup table, trade list |
+| Monitor | Replay worker health (thread, heartbeat, bars/s, position), background jobs, process/threads/memory, live event log with level filter |
+| Settings | Every data, context, risk, playbook and session-time parameter with defaults and validation, persisted to `atis_console.json`; "live" fields apply at once, the rest on Reset |
+
+Controls in the top bar: Start / Pause / Resume, Step 1 bar, +30 bars, Stop, Reset (reload data with
+current settings), replay speed.
+
+```bash
+pip install -e '.[console]'
+cd console-ui && npm install && npm run build && cd ..   # builds into src/atis/console/static
+atis-console                                              # http://127.0.0.1:8765
+```
+
+For UI development run `atis-console` and `npm run dev` in `console-ui/` (Vite proxies `/api`).
+The console binds to 127.0.0.1 and has no login, so do not expose it on a network. Data comes from
+replaying CSV or synthetic sessions; a live broker feed is not wired in yet.
+
 ## After review
 
 1. You review the docs and answer the **Open questions** (consolidated in 08 §14, plus the three

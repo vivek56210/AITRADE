@@ -67,7 +67,7 @@ class PlaybookEngine:
     def __init__(self, spec: InstrumentSpec, params: PlaybookParams = PlaybookParams(),
                  times: SessionTimes = SessionTimes(), risk: RiskParams = RiskParams(),
                  costs: CostParams = CostParams(), bar_minutes: int = 1,
-                 history: Iterable[SessionProfile] = ()):
+                 history: Iterable[SessionProfile] = (), disabled_setups: Iterable[str] = ()):
         self.spec = spec
         self.params = params
         self.times = times
@@ -75,7 +75,29 @@ class PlaybookEngine:
         self.costs = costs
         self.bar_minutes = bar_minutes
         self.history: list[SessionProfile] = list(history)
+        self.disabled_setups: set[str] = set(disabled_setups)
         self._st: SessionState | None = None
+
+    @property
+    def state(self) -> SessionState | None:
+        """The live session state (read-only by convention) or None between sessions."""
+        return self._st
+
+    @property
+    def plan(self) -> PremarketPlan | None:
+        return self._plan if self._st is not None else None
+
+    @property
+    def open_type(self) -> OpenType | None:
+        return self._open_type if self._st is not None else None
+
+    @property
+    def day_type_check(self) -> DayType | None:
+        return self._day_type_check if self._st is not None else None
+
+    @property
+    def signals(self) -> list[SetupSignal]:
+        return list(self._signals) if self._st is not None else []
 
     # ---- session lifecycle -------------------------------------------------------------------
 
@@ -145,7 +167,7 @@ class PlaybookEngine:
         ev = BarEvent(bar, st.now, period_closed, candle_closed)
         out: list[SetupSignal] = []
         for sid, detect in DETECTORS:
-            if sid in self._fired:
+            if sid in self._fired or sid in self.disabled_setups:
                 continue
             cand = detect(st, ev)
             if cand is None:

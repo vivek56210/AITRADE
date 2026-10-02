@@ -8,7 +8,7 @@ historical option-chain data.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -96,28 +96,34 @@ def simulate_premium(sig: SetupSignal, bars: list[Bar], basis: float = 0.0) -> T
 
 
 def backtest(sessions: Iterable[Session], spec: InstrumentSpec, engine: PlaybookEngine | None = None,
-             contexts: Mapping[date, DayContext] | None = None, warmup: int = 3) -> BacktestResult:
+             contexts: Mapping[date, DayContext] | None = None, warmup: int = 3,
+             on_progress: Callable[[int, int], None] | None = None) -> BacktestResult:
     engine = engine or PlaybookEngine(spec)
     sessions = sorted(sessions, key=lambda s: s.date)
-    by_date = {s.date: s for s in sessions}
-    reports = engine.run(sessions, contexts, warmup=warmup)
+    contexts = contexts or {}
+    engine.run(sessions[:warmup], contexts, warmup=warmup)
+    todo = sessions[warmup:]
+    reports: list[SessionReport] = []
     outcomes: list[TradeOutcome] = []
     stats: dict[str, SetupStats] = defaultdict(lambda: SetupStats(""))
-    for rep in reports:
-        bars = by_date[rep.date].bars
-        basis = (contexts or {}).get(rep.date, DayContext()).basis
+    for i, session in enumerate(todo, 1):
+        ctx = contexts.get(session.date, DayContext())
+        rep = engine.run_session(session, ctx)
+        reports.append(rep)
         for sig in rep.signals:
             st = stats[sig.setup_id]
             st.setup_id = sig.setup_id
             if sig.option_plan.structure.is_short_premium:
-                out = simulate_premium(sig, bars, basis)
+                out = simulate_premium(sig, session.bars, ctx.basis)
                 st.premium_trades += 1
                 st.contained += bool(out.contained)
             else:
-                out = simulate_directional(sig, bars)
+                out = simulate_directional(sig, session.bars)
                 if out.r_multiple is not None:
                     st.trades += 1
                     st.total_r += out.r_multiple
                     st.wins += out.r_multiple > 0
             outcomes.append(out)
+        if on_progress:
+            on_progress(i, len(todo))
     return BacktestResult(reports, outcomes, dict(sorted(stats.items())))
