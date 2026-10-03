@@ -168,10 +168,28 @@ Security IDs come from Dhan's public scrip master, which lists only live contrac
 kept in `data/dhan/contracts.csv`. Contracts are joined at expiry (the expiring contract is front through its
 expiry day), and each roll gap — measured at the last minute both contracts traded — is added to earlier
 bars so profile levels line up across rolls (`--raw-roll` to disable). **Dhan serves intraday history only
-for active contracts**, so a series reaches back only as far as the oldest listed contract's data
-(about three months). When the true front month isn't served, the next contract stands in. Months
-downloaded while a contract is active stay cached, so history grows from the first download onward.
+for active contracts**, so a series reaches back only as far as the oldest listed contract's data.
+When the true front month isn't served, the next contract stands in. Months downloaded while a contract
+is active stay cached, so history grows from the first download onward.
 Console: **Settings → Data source = dhan**.
+
+Measured with `dhan-check` on 2026-10-03 (expired contracts are not in the scrip master at all):
+
+| Contract | Expiry | 1-minute data served |
+|---|---|---|
+| NIFTY-Oct2026-FUT | 2026-10-27 | 2026-07-29 → 2026-10-01 |
+| NIFTY-Nov2026-FUT | 2026-11-23 | 2026-08-26 → 2026-10-01 |
+| NIFTY-Dec2026-FUT | 2026-12-29 | 2026-09-30 → 2026-10-01 |
+
+So a one-year futures backtest is not possible from Dhan today; the futures window starts 2026-07-29.
+Upstox spot baselines (R before costs, 3 warm-up sessions), for comparison with futures runs:
+
+| Spot (Upstox) | Window | Signals | Total R | Win | PF | Max DD |
+|---|---|---|---|---|---|---|
+| NIFTY | 2025-10-07 → 2026-10-01 | 363 | +7.41 | 57% | 1.05 | −23.5R |
+| BANKNIFTY | 2025-10-07 → 2026-10-01 | 339 | +29.80 | 60% | 1.23 | −9.3R |
+| NIFTY | 2026-08-03 → 2026-10-01 | 63 | −0.70 | 59% | 0.97 | −7.8R |
+| BANKNIFTY | 2026-08-03 → 2026-10-01 | 56 | +0.71 | 61% | 1.04 | −5.5R |
 
 CSV columns: `timestamp,open,high,low,close,volume[,buy_volume,sell_volume]` (IST). Without
 buy/sell volume, order flow is estimated with the tick rule and delta-divergence confirmation is
