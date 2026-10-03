@@ -19,7 +19,7 @@ fi
 echo "==> Python package"
 [ -x .venv/bin/python ] || python3 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -e ".[console]"
+.venv/bin/pip install -q -e ".[console,record]"
 
 echo "==> web UI"
 (cd console-ui && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent >/dev/null)

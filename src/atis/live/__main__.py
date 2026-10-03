@@ -5,6 +5,7 @@
   atis-live telegram-chat-id       list chats that messaged your bot (to find TELEGRAM_CHAT_ID)
   atis-live telegram-test          send a test message
   atis-live summary [--since D]    paper results recorded so far
+  atis-live record                 record NIFTY/BANKNIFTY futures order flow from Dhan's live feed
 """
 
 from __future__ import annotations
@@ -58,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--history-days", type=int, default=45)
         if name == "replay":
             p.add_argument("--date", required=True, type=date.fromisoformat)
+    r = sub.add_parser("record", help="record front-month futures ticks with buy/sell aggressor volume (Dhan feed)")
+    r.add_argument("--symbols", default="NIFTY,BANKNIFTY")
+    r.add_argument("--out", default="data/flow", help="where 1-minute flow bars and raw ticks are written")
+    r.add_argument("--cache", default="data/dhan", help="Dhan contract registry cache")
+    r.add_argument("--dry-run", action="store_true", help="print notices instead of sending them to Telegram")
     sub.add_parser("telegram-test")
     sub.add_parser("telegram-chat-id")
     s = sub.add_parser("summary")
@@ -89,6 +95,20 @@ def main(argv: list[str] | None = None) -> int:
             print(journal_summary(Path(args.state_dir) / f"journal-{args.label}.jsonl", args.since))
             return 0
 
+        if args.cmd == "record":
+            from .recorder import record_day
+            notifier = notifier_from_env(args.dry_run)
+            clock = SystemClock()
+            today = clock.now().date()
+            if today.weekday() >= 5:
+                log_stderr(f"{today} is a weekend - nothing to record")
+                return 0
+            res = record_day(today, tuple(x.strip().upper() for x in args.symbols.split(",") if x.strip()),
+                             Path(args.out), Path(args.cache), notifier.send, log_stderr, clock.now)
+            if res is None:
+                return 1
+            log_stderr(f"recorded {res.ticks} updates: {res.bars} ({res.stopped})")
+            return 0
         notifier = notifier_from_env(args.dry_run)
         cache = Path(args.cache)
         history = _history_loader(cache, args.history_days)
