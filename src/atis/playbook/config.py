@@ -137,6 +137,17 @@ class PlaybookParams:
     early_series_sessions: int = 10
     event_buffer_minutes: int = 60
     require_dpoc_acceptance: bool = True
+    # R1 level + reaction (fixed before testing); off until a backtest supports it
+    reaction_setups: bool = False
+    reaction_start_minutes: int = 15
+    reaction_window_bars: int = 15
+    reaction_margin_ib: float = 0.15
+    reaction_max_risk_ib: float = 0.60
+    absorption_volume_ratio: float = 1.3
+    divergence_lookback_bars: int = 60
+    # trade management: after the first target, trail the stop under the low (long) / above the high
+    # (short) of the last N bars; 0 = off (breakeven only)
+    trail_bars: int = 0
 
 
 @dataclass(frozen=True)

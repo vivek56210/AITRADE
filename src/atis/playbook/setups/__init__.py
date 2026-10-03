@@ -4,6 +4,7 @@ from .balance import c1_open_inside_value, c2_wide_ib_normal_day, c3_multi_day_b
 from .expiry_day import d1_expiry_pin
 from .imbalance import (a1_open_drive, a2_open_test_drive, a3_ib_breakout, a4_balance_breakout,
                         a5_single_print_continuation)
+from .reaction import r1_level_reaction
 from .rejection import b1_failed_gap, b2_eighty_percent_rule, b3_failed_breakout, b4_poor_extreme_repair
 
 DETECTORS = (
@@ -20,6 +21,7 @@ DETECTORS = (
     ("B3", b3_failed_breakout),
     ("B4", b4_poor_extreme_repair),
     ("D1", d1_expiry_pin),
+    ("R1", r1_level_reaction),
 )
 
 __all__ = ["DETECTORS"]

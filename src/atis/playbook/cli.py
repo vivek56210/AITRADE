@@ -14,6 +14,7 @@ from . import crypto
 from .backtest import backtest
 from .config import CRYPTO_INSTRUMENTS, INSTRUMENTS, PlaybookParams, RiskParams
 from .data import load_csv, prepare_sessions, synthetic_sessions, write_csv
+from .binance import fetch_flow_1m
 from .delta import DeltaError, fetch_perp_1m
 from .dhan import DhanError, Roll, availability, fetch_futures_1m, profile
 from .engine import PlaybookEngine
@@ -24,6 +25,7 @@ from .upstox import fetch_index_1m
 DEFAULT_CACHE = Path("data/upstox")
 DHAN_CACHE = Path("data/dhan")
 DELTA_CACHE = Path("data/delta")
+BINANCE_CACHE = Path("data/binance")
 
 
 def _dates(raw: str | None) -> frozenset[date]:
@@ -89,7 +91,10 @@ def build_parser() -> argparse.ArgumentParser:
                                                                          for k, v in crypto.SESSIONS.items()))
     c.add_argument("--from", dest="start", required=True, type=date.fromisoformat)
     c.add_argument("--to", dest="end", default=date.today(), type=date.fromisoformat)
-    c.add_argument("--cache", default=str(DELTA_CACHE))
+    c.add_argument("--source", default="delta", choices=("delta", "binance"),
+                   help="delta: Delta India candles (volume, no buy/sell split); binance: Binance perpetual "
+                        "candles with real taker-buy volume (true order flow). Fees are Delta's either way")
+    c.add_argument("--cache", help=f"cache folder (default {DELTA_CACHE} / {BINANCE_CACHE})")
     c.add_argument("--warmup-days", type=int, default=10, help="days before --from used only to build history")
     c.add_argument("--disable", help="comma-separated setup ids to switch off")
     c.add_argument("--json", action="store_true")
@@ -149,11 +154,15 @@ def _crypto(args: argparse.Namespace) -> int:
     out = []
     for sym in symbols:
         # one extra day either side so every local-time session is complete
-        bars = fetch_perp_1m(sym, args.start - timedelta(days=args.warmup_days + 1), args.end + timedelta(days=1),
-                             Path(args.cache), on_month=_progress(sym))
+        lo, hi = args.start - timedelta(days=args.warmup_days + 1), args.end + timedelta(days=1)
+        if args.source == "binance":
+            bars = fetch_flow_1m(sym, lo, hi, Path(args.cache or BINANCE_CACHE), on_month=_progress(sym))
+        else:
+            bars = fetch_perp_1m(sym, lo, hi, Path(args.cache or DELTA_CACHE), on_month=_progress(sym))
         for key in keys:
             sm = crypto.summarize(crypto.run(sym, crypto.SESSIONS[key], bars, args.start, args.end,
                                              args.warmup_days, disabled))
+            sm["source"] = args.source
             out.append(sm)
             if not args.json:
                 print(crypto.format_summary(sm), flush=True)

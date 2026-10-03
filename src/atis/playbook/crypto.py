@@ -55,13 +55,14 @@ class CryptoRun:
 
 def run(symbol: str, session: SessionDef, bars_utc: list[Bar], start: date, end: date,
         warmup_days: int = 10, disabled: Iterable[str] = (), risk: RiskParams = RiskParams(),
-        on_progress: Callable[[int, int], None] | None = None) -> CryptoRun:
+        on_progress: Callable[[int, int], None] | None = None,
+        params: PlaybookParams = PlaybookParams()) -> CryptoRun:
     spec = CRYPTO_INSTRUMENTS[symbol]
     times = session.times
     sessions = [s for s in crypto_sessions(bars_utc, session.tz, times.open, times.close)
                 if start - timedelta(days=warmup_days) <= s.date <= end]
     warmup = max(3, sum(s.date < start for s in sessions))
-    engine = PlaybookEngine(spec, PlaybookParams(), times=times, risk=risk, disabled_setups=disabled)
+    engine = PlaybookEngine(spec, params, times=times, risk=risk, disabled_setups=disabled)
     res = backtest(sessions, spec, engine, warmup=warmup, on_progress=on_progress)
     return CryptoRun(symbol, session, start, end, res)
 

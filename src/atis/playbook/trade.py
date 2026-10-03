@@ -8,7 +8,7 @@ which is how it knows today's and this week's realized R for the loss limits.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -25,10 +25,13 @@ class TradeState:
     last_close: float | None = None
     r: float | None = None
     reason: str = ""
+    trail_bars: int = 0  # >0: after the first target, trail the stop over the last N bars' extreme
+    recent: deque = field(default_factory=deque)
 
     def __post_init__(self) -> None:
         self.stop = self.sig.stop
         self.targets = list(self.sig.targets)
+        self.recent = deque(maxlen=max(self.trail_bars, 1))
 
     @property
     def risk(self) -> float:
@@ -58,7 +61,7 @@ class TradeState:
         adverse = b.low if sgn > 0 else b.high
         if sgn * (adverse - self.stop) <= 0:
             self.realized += self.remaining * sgn * (self.stop - sig.entry)
-            return self._close("stop" if self.stop != sig.entry else "breakeven")
+            return self._close("stop" if self.stop == sig.stop else "breakeven" if self.stop == sig.entry else "trailing stop")
         favourable = b.high if sgn > 0 else b.low
         while self.targets and sgn * (favourable - self.targets[0].price) >= 0:
             t = self.targets.pop(0)
@@ -69,6 +72,12 @@ class TradeState:
         self.last_close = b.close
         if self.remaining <= 1e-9:
             return self._close("targets")
+        if self.trail_bars:
+            self.recent.append(b)
+            if self.remaining < 1.0 and len(self.recent) == self.trail_bars:
+                level = min(x.low for x in self.recent) if sgn > 0 else max(x.high for x in self.recent)
+                if sgn * (level - self.stop) > 0:
+                    self.stop = level
         return False
 
     def finish(self) -> bool:

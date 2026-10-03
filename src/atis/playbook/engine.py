@@ -302,7 +302,7 @@ class PlaybookEngine:
             return "India VIX rising - no premium selling"
         if short and self._short_premium_taken:
             return "premium-selling structure already taken today"
-        if not short and self._directional_blocked:
+        if not short and self._directional_blocked and cand.group != "R":
             return f"neutral/unclear structure by {t.day_type_check:%H:%M} - no directional trades"
         opposed = next((s for s in self._live if s.direction.sign == -cand.direction.sign != 0), None)
         if opposed:
@@ -362,7 +362,7 @@ class PlaybookEngine:
         )
         if sig.stop is not None and sig.direction.sign:
             self._live.append(sig)
-            trade = TradeState(sig)
+            trade = TradeState(sig, trail_bars=self.params.trail_bars)
             if trade.valid:
                 self._open.append(trade)
         return sig

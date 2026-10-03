@@ -253,7 +253,7 @@ class LiveRunner:
         if report:
             for sig in report.signals:
                 out = (simulate_premium(sig, book.bars) if sig.option_plan.structure.is_short_premium
-                       else simulate_directional(sig, book.bars))
+                       else simulate_directional(sig, book.bars, self.cfg.params.trail_bars))
                 outcomes.append(out)
             self._journal(day, report, outcomes)
         self._once(day, state, f"eod:{book.symbol}", eod_message(book.symbol, day, report, outcomes))

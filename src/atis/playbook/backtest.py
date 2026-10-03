@@ -127,8 +127,8 @@ def fee_in_r(sig: SetupSignal, fee_per_side: float) -> float:
     return round(2 * fee_per_side * sig.entry / risk, 3) if fee_per_side and risk > 0 else 0.0
 
 
-def simulate_directional(sig: SetupSignal, bars: list[Bar]) -> TradeOutcome:
-    trade = TradeState(sig)
+def simulate_directional(sig: SetupSignal, bars: list[Bar], trail_bars: int = 0) -> TradeOutcome:
+    trade = TradeState(sig, trail_bars=trail_bars)
     if not trade.valid:
         return TradeOutcome(sig, None, None, "no stop/targets")
     for b in bars:
@@ -174,7 +174,7 @@ def backtest(sessions: Iterable[Session], spec: InstrumentSpec, engine: Playbook
                 st.premium_trades += 1
                 st.contained += bool(out.contained)
             else:
-                out = simulate_directional(sig, session.bars)
+                out = simulate_directional(sig, session.bars, engine.params.trail_bars)
                 if out.r_multiple is not None:
                     out.cost_r = fee_in_r(sig, spec.fee_per_side)
                     st.trades += 1
