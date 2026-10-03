@@ -15,6 +15,7 @@ from .orderflow import bar_delta
 from .risk import round_trip_costs, size_trade
 from .setups import DETECTORS
 from .state import BarEvent, DayContext, SessionState
+from .trade import RiskLedger, TradeState
 from .structure import (Balance, SessionProfile, TPO_LETTERS, analyze_session, average_ib, average_range,
                         average_va_width, classify_ib, classify_open, detect_balance, period_index,
                         session_start, value_migration)
@@ -67,7 +68,8 @@ class PlaybookEngine:
     def __init__(self, spec: InstrumentSpec, params: PlaybookParams = PlaybookParams(),
                  times: SessionTimes = SessionTimes(), risk: RiskParams = RiskParams(),
                  costs: CostParams = CostParams(), bar_minutes: int = 1,
-                 history: Iterable[SessionProfile] = (), disabled_setups: Iterable[str] = ()):
+                 history: Iterable[SessionProfile] = (), disabled_setups: Iterable[str] = (),
+                 ledger: RiskLedger | None = None):
         self.spec = spec
         self.params = params
         self.times = times
@@ -76,6 +78,7 @@ class PlaybookEngine:
         self.bar_minutes = bar_minutes
         self.history: list[SessionProfile] = list(history)
         self.disabled_setups: set[str] = set(disabled_setups)
+        self.ledger = ledger if ledger is not None else RiskLedger()
         self._st: SessionState | None = None
 
     @property
@@ -117,6 +120,7 @@ class PlaybookEngine:
         self._fired: set[str] = set()
         self._signals: list[SetupSignal] = []
         self._live: list[SetupSignal] = []
+        self._open: list[TradeState] = []
         self._trades = 0
         self._short_premium_taken = False
         self._directional_blocked = False
@@ -156,6 +160,7 @@ class PlaybookEngine:
         period_closed = self._finalize_period() if st.now >= self._period.end else None
         candle_closed = self._finalize_candle() if st.now >= self._candle.end else None
         self._live = [s for s in self._live if not _finished(s, bar)]
+        self._track(bar)
 
         if (self._day_type_check is None and st.ib_complete
                 and st.now >= st.at(self.times.day_type_check)):
@@ -185,6 +190,10 @@ class PlaybookEngine:
         st = self._st
         if st is None or not st.bars:
             raise RuntimeError("no bars were processed for this session")
+        for t in self._open:
+            t.finish()
+            self.ledger.record(st.date, t.r * t.sig.size_multiplier)
+        self._open = []
         profile = analyze_session(Session(st.date, st.bars), self.spec, self.params, self.times,
                                   st.prior, st.avg_ib or None, st.avg_range)
         report = SessionReport(
@@ -244,6 +253,29 @@ class PlaybookEngine:
             st.ib_class = classify_ib(st.ib_range, st.avg_ib, self.params)
         return p
 
+    def _track(self, bar: Bar) -> None:
+        """Follow open directional trades so realized R (for the loss limits) is known intraday."""
+        still = []
+        for t in self._open:
+            if t.update(bar):
+                self.ledger.record(self._st.date, t.r * t.sig.size_multiplier)
+            else:
+                still.append(t)
+        self._open = still
+
+    def loss_limit_hit(self) -> str | None:
+        """Why no new trades are allowed today (daily or weekly realized loss in R), or None."""
+        d, r = self._st.date, self.risk
+        if r.risk_per_trade <= 0:
+            return None
+        day_cap, week_cap = r.daily_loss_limit / r.risk_per_trade, r.weekly_loss_limit / r.risk_per_trade
+        today, week = self.ledger.day(d), self.ledger.week(d)
+        if today <= -day_cap + 1e-9:
+            return f"daily loss limit reached ({today:+.1f}R today, limit -{day_cap:g}R)"
+        if week <= -week_cap + 1e-9:
+            return f"weekly loss limit reached ({week:+.1f}R this week, limit -{week_cap:g}R) - no trades until Monday"
+        return None
+
     def _finalize_candle(self) -> PeriodStat:
         c = self._candle
         self._candle = None
@@ -255,6 +287,9 @@ class PlaybookEngine:
         short = cand.structure.is_short_premium
         if self._trades >= self.risk.max_trades_per_day:
             return "max trades per day reached"
+        limit = self.loss_limit_hit()
+        if limit:
+            return limit
         event = st.event_within(now, self.params.event_buffer_minutes)
         if event:
             return f"scheduled event at {event:%H:%M} within the hour"
@@ -320,6 +355,9 @@ class PlaybookEngine:
         )
         if sig.stop is not None and sig.direction.sign:
             self._live.append(sig)
+            trade = TradeState(sig)
+            if trade.valid:
+                self._open.append(trade)
         return sig
 
     def _build_plan(self, st: SessionState) -> PremarketPlan:

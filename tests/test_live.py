@@ -191,3 +191,14 @@ def test_find_chat_ids_wrong_token_is_a_clean_error():
     with pytest.raises(TelegramError, match="rejected") as exc:
         find_chat_ids("123:SECRET", post=post)
     assert "SECRET" not in str(exc.value)
+
+
+def test_loss_limit_seeded_from_journal_and_announced_once(tmp_path):
+    rows = [{"key": f"NIFTY|2026-09-28 10:0{i}|A3", "date": "2026-09-28", "symbol": "NIFTY", "setup": "A3",
+             "r": -1.0, "contained": None} for i in range(6)]
+    (tmp_path / "journal-live.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    r, n = runner(tmp_path, path_session(TODAY, A1_DAY).bars)
+    r.run_day(TODAY)
+    assert r.ledger.week(TODAY) == -6.0
+    assert not any("A1 LONG" in t for t in n.sent)
+    assert sum("weekly loss limit" in t for t in n.sent) == 1

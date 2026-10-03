@@ -17,6 +17,7 @@ from .config import InstrumentSpec
 from .engine import PlaybookEngine, SessionReport
 from .models import Bar, Session, SetupSignal
 from .state import DayContext
+from .trade import TradeState
 
 
 @dataclass
@@ -110,30 +111,14 @@ def fee_in_r(sig: SetupSignal, fee_per_side: float) -> float:
 
 
 def simulate_directional(sig: SetupSignal, bars: list[Bar]) -> TradeOutcome:
-    sgn = sig.direction.sign
-    risk = abs(sig.entry - sig.stop) if sig.stop is not None else 0.0
-    if risk <= 0 or not sig.targets:
+    trade = TradeState(sig)
+    if not trade.valid:
         return TradeOutcome(sig, None, None, "no stop/targets")
-    stop, remaining, realized = sig.stop, 1.0, 0.0
-    targets = list(sig.targets)
-    live = [b for b in bars if b.ts >= sig.ts and (sig.exit_by is None or b.ts < sig.exit_by)]
-    for b in live:
-        adverse = b.low if sgn > 0 else b.high
-        if sgn * (adverse - stop) <= 0:
-            realized += remaining * sgn * (stop - sig.entry)
-            return TradeOutcome(sig, round(realized / risk, 3), None, "stop" if stop != sig.entry else "breakeven")
-        favourable = b.high if sgn > 0 else b.low
-        while targets and sgn * (favourable - targets[0].price) >= 0:
-            t = targets.pop(0)
-            part = min(remaining, t.size_pct / 100.0)
-            realized += part * sgn * (t.price - sig.entry)
-            remaining -= part
-            stop = sig.entry
-        if remaining <= 1e-9:
-            return TradeOutcome(sig, round(realized / risk, 3), None, "targets")
-    last = live[-1].close if live else sig.entry
-    realized += remaining * sgn * (last - sig.entry)
-    return TradeOutcome(sig, round(realized / risk, 3), None, "time exit")
+    for b in bars:
+        if trade.update(b):
+            break
+    trade.finish()
+    return TradeOutcome(sig, trade.r, None, trade.reason)
 
 
 def simulate_premium(sig: SetupSignal, bars: list[Bar], basis: float = 0.0) -> TradeOutcome:

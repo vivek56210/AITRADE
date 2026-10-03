@@ -19,6 +19,7 @@ from ..playbook.engine import PlaybookEngine, SessionReport
 from ..playbook.models import Bar, Session, SetupSignal
 from ..playbook.report import to_jsonable
 from ..playbook.state import DayContext
+from ..playbook.trade import RiskLedger
 from ..console.views import histogram, live_today, session_payload
 from .messages import eod_message, plan_message, signal_message
 from .telegram import esc
@@ -58,6 +59,7 @@ class LiveRunner:
                  extra_holidays: frozenset[date] = frozenset(), log=print):
         self.cfg, self.feed, self.notifier, self.clock = cfg, feed, notifier, clock
         self.history, self.extra_holidays, self.log = history, extra_holidays, log
+        self.ledger = RiskLedger()
 
     # ---- state -----------------------------------------------------------------------------
 
@@ -92,10 +94,28 @@ class LiveRunner:
             raise RuntimeError(f"no history before {day} for {symbol}")
         c = self.cfg
         engine = PlaybookEngine(INSTRUMENTS[symbol], c.params, c.times, c.risk,
-                                disabled_setups=c.disabled_setups)
+                                disabled_setups=c.disabled_setups, ledger=self.ledger)
         engine.run(sessions, warmup=len(sessions))
         ctx = DayContext(holidays=data_holidays | self.extra_holidays)
         return Book(symbol, engine), ctx
+
+    def journal_path(self) -> Path:
+        return self.cfg.state_dir / f"journal-{self.cfg.label}.jsonl"
+
+    def seed_ledger(self, day: date) -> RiskLedger:
+        """Account-wide realized R for earlier days of this week, from the paper journal."""
+        self.ledger = RiskLedger()
+        monday = day - timedelta(days=day.weekday())
+        path = self.journal_path()
+        if path.exists():
+            for ln in path.read_text().splitlines():
+                if not ln.strip():
+                    continue
+                row = json.loads(ln)
+                d = date.fromisoformat(row["date"])
+                if monday <= d < day and row.get("r") is not None:
+                    self.ledger.record(d, row["r"] * row.get("size", 1.0))
+        return self.ledger
 
     def is_trading_day(self, day: date) -> bool:
         return day.weekday() < 5 and day not in self.extra_holidays
@@ -106,6 +126,9 @@ class LiveRunner:
             self.log(f"{day} is not a trading day; nothing to do")
             return {}
         state = self._load_state(day)
+        week = self.seed_ledger(day).week(day)
+        if week:
+            self.log(f"week so far {week:+.2f}R (paper journal)")
         books: dict[str, Book] = {}
         for sym in self.cfg.symbols:
             book, ctx = self._prepare(sym, day)
@@ -169,6 +192,9 @@ class LiveRunner:
                 self.log(f"signal {key}")
         if fresh:
             self._snapshot(book, day, state, live=True)
+            limit = book.engine.loss_limit_hit() if book.engine.state is not None else None
+            if limit:
+                self._once(day, state, "loss-limit", f"<b>ATIS: {esc(limit)}.</b> No new trade alerts until it resets.")
         self._check_stale(book, day, now, state)
 
     def snapshot_path(self, symbol: str, day: date) -> Path:
@@ -226,7 +252,7 @@ class LiveRunner:
 
     def _journal(self, day: date, report: SessionReport, outcomes: list[TradeOutcome]) -> None:
         self.cfg.state_dir.mkdir(parents=True, exist_ok=True)
-        path = self.cfg.state_dir / f"journal-{self.cfg.label}.jsonl"
+        path = self.journal_path()
         done = set()
         if path.exists():
             done = {json.loads(ln)["key"] for ln in path.read_text().splitlines() if ln.strip()}
@@ -240,7 +266,7 @@ class LiveRunner:
                     "key": key, "date": day.isoformat(), "symbol": s.symbol, "setup": s.setup_id,
                     "time": f"{s.ts:%H:%M}", "direction": s.direction.value, "entry": s.entry, "stop": s.stop,
                     "structure": s.option_plan.structure.value, "lots": s.lots, "r": o.r_multiple,
-                    "contained": o.contained, "exit": o.exit_reason,
+                    "contained": o.contained, "exit": o.exit_reason, "size": s.size_multiplier,
                     "legs": to_jsonable(s.option_plan.legs),
                 }) + "\n")
 
