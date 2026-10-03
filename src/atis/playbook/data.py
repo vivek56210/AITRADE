@@ -27,13 +27,13 @@ def _opt(row: dict[str, str], key: str) -> float | None:
 
 
 def load_csv(path: str | Path) -> list[Bar]:
-    """Columns: timestamp, open, high, low, close, volume[, buy_volume, sell_volume]."""
+    """Columns: timestamp, open, high, low, close, volume[, buy_volume, sell_volume, oi]."""
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
         rows = [{k.strip().lower(): v for k, v in r.items()} for r in reader]
     ts_key = next(k for k in ("timestamp", "datetime", "ts", "date") if k in rows[0])
     bars = [Bar(_parse_ts(r[ts_key]), float(r["open"]), float(r["high"]), float(r["low"]),
-                float(r["close"]), float(r["volume"]), _opt(r, "buy_volume"), _opt(r, "sell_volume"))
+                float(r["close"]), float(r["volume"]), _opt(r, "buy_volume"), _opt(r, "sell_volume"), _opt(r, "oi"))
             for r in rows]
     return sorted(bars, key=lambda b: b.ts)
 
@@ -85,9 +85,10 @@ def prepare_sessions(bars: list[Bar], start: time = time(9, 15),
 def write_csv(path: str | Path, bars: Iterable[Bar]) -> None:
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["timestamp", "open", "high", "low", "close", "volume"])
+        w.writerow(["timestamp", "open", "high", "low", "close", "volume", "oi"])
         for b in bars:
-            w.writerow([b.ts.isoformat(sep=" "), b.open, b.high, b.low, b.close, b.volume])
+            w.writerow([b.ts.isoformat(sep=" "), b.open, b.high, b.low, b.close, b.volume,
+                        "" if b.oi is None else b.oi])
 
 
 def path_session(d: date, waypoints: list[tuple[str, float]], volume: float = 1000.0,

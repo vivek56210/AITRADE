@@ -153,6 +153,26 @@ Index bars carry no volume, so every minute is weighted equally (a time-at-price
 order-flow confirmations read `n/a`. Exchange holidays are inferred from gaps in the data and short
 special sessions are dropped. In the console, set **Settings → Data source = upstox** with a date range.
 
+**Futures with volume and OI (Dhan account):** `--dhan` downloads 1-minute front-month NIFTY / BANKNIFTY
+futures from DhanHQ v2 (`POST /v2/charts/intraday`), cached per contract-month under `data/dhan/`. It is
+read-only: only `/v2/profile` and `/v2/charts/intraday` can be called. Credentials come from
+`DHAN_CLIENT_ID` and `DHAN_ACCESS_TOKEN` in the environment (tokens last 24 hours).
+
+```bash
+python -m atis.playbook dhan-check --symbol NIFTY      # token check + how far back each contract goes
+python -m atis.playbook run --dhan --symbol NIFTY --from 2026-07-01 --backtest
+python -m atis.playbook fetch --source dhan --symbol BANKNIFTY --from 2026-07-01 --out bn_fut_1m.csv
+```
+
+Security IDs come from Dhan's public scrip master, which lists only live contracts; every contract seen is
+kept in `data/dhan/contracts.csv`. Contracts are joined at expiry (the expiring contract is front through its
+expiry day), and each roll gap — measured at the last minute both contracts traded — is added to earlier
+bars so profile levels line up across rolls (`--raw-roll` to disable). **Dhan serves intraday history only
+for active contracts**, so a series reaches back only as far as the oldest listed contract's data
+(about three months). When the true front month isn't served, the next contract stands in. Months
+downloaded while a contract is active stay cached, so history grows from the first download onward.
+Console: **Settings → Data source = dhan**.
+
 CSV columns: `timestamp,open,high,low,close,volume[,buy_volume,sell_volume]` (IST). Without
 buy/sell volume, order flow is estimated with the tick rule and delta-divergence confirmation is
 reported as `n/a`. Without `--iv`, option premiums are not priced and sizing falls back to an

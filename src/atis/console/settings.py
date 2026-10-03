@@ -15,17 +15,24 @@ from ..playbook.state import DayContext
 from .catalog import SETUP_IDS
 
 LIVE_KEYS = {"replay_speed", "disabled_setups"}
-DATA_SOURCES = ("synthetic", "upstox", "csv")
+DATA_SOURCES = ("synthetic", "upstox", "dhan", "csv")
 _OPTIONAL_FLOATS = {"iv", "max_oi_strike"}
 _SECTIONS = ("context", "risk", "params", "times")
 
 HELP = {
     "symbol": "Index whose current-month futures bars are loaded.",
     "data_source": "upstox = real 1-minute NIFTY/BANKNIFTY index bars downloaded from Upstox (cached); "
+                   "dhan = 1-minute front-month futures with volume and OI from DhanHQ (read-only, needs "
+                   "DHAN_CLIENT_ID / DHAN_ACCESS_TOKEN in the environment; active contracts only); "
                    "csv = your own bars file; synthetic = generated demo sessions.",
     "upstox_from": "First date to download (YYYY-MM-DD, 2022-01-01 or later).",
     "upstox_to": "Last date to download (YYYY-MM-DD); empty = today.",
-    "data_cache": "Folder where downloaded months are cached.",
+    "data_cache": "Folder where downloaded Upstox months are cached.",
+    "dhan_from": "First date to download from Dhan (YYYY-MM-DD). Expired futures are not served, so data "
+                 "starts where the oldest listed contract's history starts.",
+    "dhan_to": "Last date to download from Dhan (YYYY-MM-DD); empty = today.",
+    "dhan_cache": "Folder where Dhan contract months and the contract registry are cached.",
+    "dhan_back_adjust": "Add each roll gap to earlier bars so profile levels line up across contract rolls.",
     "csv_path": "Path to a CSV with timestamp,open,high,low,close,volume[,buy_volume,sell_volume] (IST).",
     "warmup_sessions": "Sessions used only to build history (prior value, averages) before signals start.",
     "replay_speed": "Bars per second for the background replay; 0 = as fast as possible.",
@@ -75,6 +82,10 @@ class ConsoleSettings:
     upstox_from: str = "2025-10-01"
     upstox_to: str = ""
     data_cache: str = "data/upstox"
+    dhan_from: str = "2026-07-01"
+    dhan_to: str = ""
+    dhan_cache: str = "data/dhan"
+    dhan_back_adjust: bool = True
     synthetic_days: int = 30
     synthetic_seed: int = 7
     synthetic_start: str = "2026-08-03"
@@ -173,6 +184,8 @@ def validate(s: ConsoleSettings) -> None:
         date.fromisoformat(s.synthetic_start)
         start = date.fromisoformat(s.upstox_from)
         end = date.fromisoformat(s.upstox_to) if s.upstox_to else date.today()
+        dhan_start = date.fromisoformat(s.dhan_from)
+        dhan_end = date.fromisoformat(s.dhan_to) if s.dhan_to else date.today()
         [date.fromisoformat(d) for d in s.context.holidays]
         [datetime.fromisoformat(e) for e in s.context.events]
     except ValueError as exc:
@@ -180,6 +193,8 @@ def validate(s: ConsoleSettings) -> None:
     if s.data_source == "upstox":
         check(start <= end, "upstox_from must be on or before upstox_to")
         check(end >= date(2022, 1, 1), "upstox: 1-minute history starts 2022-01-01")
+    if s.data_source == "dhan":
+        check(dhan_start <= dhan_end, "dhan_from must be on or before dhan_to")
     check(s.warmup_sessions >= 1, "warmup_sessions: need at least 1 session of history")
     check(s.replay_speed >= 0, "replay_speed: must be >= 0")
     check(set(s.disabled_setups) <= set(SETUP_IDS), "disabled_setups: unknown setup id")

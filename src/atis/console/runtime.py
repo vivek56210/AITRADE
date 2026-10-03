@@ -23,6 +23,7 @@ from typing import Any
 from ..playbook.backtest import backtest
 from ..playbook.config import INSTRUMENTS
 from ..playbook.data import load_csv, prepare_sessions, synthetic_sessions
+from ..playbook.dhan import Roll, fetch_futures_1m
 from ..playbook.upstox import fetch_index_1m
 from ..playbook.engine import PlaybookEngine, SessionReport, infer_bar_minutes
 from ..playbook.models import Session, SetupSignal
@@ -164,13 +165,24 @@ class Runtime:
                                           base=base, seed=s.synthetic_seed)
             holidays: frozenset[date] = frozenset()
         else:
+            def progress(month: date, n: int) -> None:
+                self.log("info", "data", f"{s.symbol} {month:%Y-%m}: {n} bars")
+
             if s.data_source == "csv":
                 bars = load_csv(Path(s.csv_path).expanduser())
+            elif s.data_source == "dhan":
+                end = date.fromisoformat(s.dhan_to) if s.dhan_to else date.today()
+                rolls: list[Roll] = []
+                bars = fetch_futures_1m(s.symbol, date.fromisoformat(s.dhan_from), end,
+                                        Path(s.dhan_cache).expanduser(), adjust=s.dhan_back_adjust,
+                                        on_month=progress, rolls_out=rolls)
+                for r in rolls:
+                    self.log("info", "data", f"roll {r.old.trading_symbol} -> {r.new.trading_symbol}: "
+                             f"gap {r.gap:+.2f}{'' if s.dhan_back_adjust else ' (not adjusted)'}")
             else:
                 end = date.fromisoformat(s.upstox_to) if s.upstox_to else date.today()
                 bars = fetch_index_1m(s.symbol, date.fromisoformat(s.upstox_from), end,
-                                      Path(s.data_cache).expanduser(),
-                                      on_month=lambda m, n: self.log("info", "data", f"{s.symbol} {m:%Y-%m}: {n} bars"))
+                                      Path(s.data_cache).expanduser(), on_month=progress)
             sessions, holidays = prepare_sessions(bars, s.times.open, s.times.close)
         if len(sessions) < 2:
             raise ValueError("need at least 2 sessions of data (1 for history, 1 to trade)")

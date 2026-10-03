@@ -75,6 +75,7 @@ class Bar:
     volume: float
     buy_volume: float | None = None
     sell_volume: float | None = None
+    oi: float | None = None
 
 
 @dataclass
