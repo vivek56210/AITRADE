@@ -212,6 +212,21 @@ The worst underperformance is where the profile is built from the sparsest print
 comparison needs front-month history. That builds up in the cache from now on: each month is saved while
 its contract is still active, and Dhan keeps no intraday history after expiry.
 
+Front-month only, 2026-09-30 as history and 2026-10-01 traded (`--from 2026-09-30 --warmup 1 --details`).
+This is one session, so it is an anecdote, not evidence:
+
+| 2026-10-01 | Futures (front month) | Spot |
+|---|---|---|
+| NIFTY | +2.50R, 1 trade: A3 short | −1.72R, 3 trades: A2 short −1, B3 long −1, A3 short +0.28 |
+| BANKNIFTY | +1.08R, 3 trades: B2 long +0.46, B3 short +1.13, A3 short −0.51 | +0.78R: B3 short; C1 condor broke |
+
+The difference is in which setups fire. Futures profiles are weighted by traded volume, spot profiles by
+time, so the prior-day value area moves. NIFTY's 2026-09-30 value area was ~170 points wide on futures
+vs ~95 on spot, so the early move that spot read as a test of the prior low (A2, −1R) sat mid-value on
+futures and was skipped. BANKNIFTY opened inside value on spot (condor) but below value on futures (80%
+rule long). Two of the three BANKNIFTY futures signals sized to 0 lots at 1% risk; the backtest still
+scores them in R. Front-month bars had no zero-volume minutes.
+
 CSV columns: `timestamp,open,high,low,close,volume[,buy_volume,sell_volume]` (IST). Without
 buy/sell volume, order flow is estimated with the tick rule and delta-divergence confirmation is
 reported as `n/a`. Without `--iv`, option premiums are not priced and sizing falls back to an
