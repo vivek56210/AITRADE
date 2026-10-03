@@ -182,21 +182,22 @@ Measured with `dhan-check` on 2026-10-03 (expired contracts are not in the scrip
 | NIFTY-Dec2026-FUT | 2026-12-29 | 2026-09-30 → 2026-10-01 |
 
 So a one-year futures backtest is not possible from Dhan today; the futures window starts 2026-07-29.
-Upstox spot baselines (R before costs, 3 warm-up sessions), for comparison with futures runs:
+Upstox spot baselines (R before costs, 3 warm-up sessions; reproduced from a fresh download on 2026-10-03),
+for comparison with futures runs:
 
 | Spot (Upstox) | Window | Signals | Total R | Win | PF | Max DD |
 |---|---|---|---|---|---|---|
 | NIFTY | 2025-10-07 → 2026-10-01 | 363 | +7.41 | 57% | 1.05 | −23.5R |
-| BANKNIFTY | 2025-10-07 → 2026-10-01 | 339 | +29.80 | 60% | 1.23 | −9.3R |
+| BANKNIFTY | 2025-10-07 → 2026-10-01 | 339 | +26.21 | 60% | 1.20 | −9.3R |
 | NIFTY | 2026-08-03 → 2026-10-01 | 63 | −0.70 | 59% | 0.97 | −7.8R |
-| BANKNIFTY | 2026-08-03 → 2026-10-01 | 56 | +0.71 | 61% | 1.04 | −5.5R |
+| BANKNIFTY | 2026-08-03 → 2026-10-01 | 56 | −2.88 | 57% | 0.87 | −6.6R |
 
 Same window on Dhan futures (`run --dhan --from 2026-07-29 --to 2026-10-01`, back-adjusted, 43 sessions):
 
 | Futures (Dhan) | Signals | Total R | Win | PF | Max DD | vs spot, same window |
 |---|---|---|---|---|---|---|
 | NIFTY | 54 | −2.61 | 52% | 0.89 | −8.0R | −1.9R |
-| BANKNIFTY | 57 | −8.94 | 42% | 0.65 | −15.2R | −9.7R |
+| BANKNIFTY | 57 | −8.94 | 42% | 0.65 | −15.2R | −6.1R |
 
 Read this as a data-quality result, not a verdict on futures profiles. Because the Sep contract has expired,
 every day up to 2026-09-29 comes from the **next-month** Oct contract, which barely trades then. Share of

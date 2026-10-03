@@ -8,7 +8,7 @@ from atis.console.settings import ConsoleSettings, SettingsError, settings_from_
 from atis.playbook import dhan
 from atis.playbook.cli import main
 from atis.playbook.data import synthetic_sessions
-from atis.playbook.dhan import (Contract, DhanError, fetch_futures_1m, front_contract, load_contracts,
+from atis.playbook.dhan import (DhanError, fetch_futures_1m, front_contract, load_contracts,
                                 parse_candles, parse_scrip_master)
 from atis.playbook.models import Bar
 
