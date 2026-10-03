@@ -3,6 +3,7 @@ import type {
   JobDetail,
   JobSummary,
   JournalEntry,
+  LiveOverview,
   LogEvent,
   SessionSummary,
   SessionView,
@@ -70,4 +71,7 @@ export const api = {
     request<SettingsResponse>("/api/settings", { method: "PUT", body: JSON.stringify(data) }),
   restoreDefaults: () => post<SettingsResponse>("/api/settings/defaults"),
   system: () => request<SystemInfo>("/api/system"),
+  live: () => request<LiveOverview>("/api/live"),
+  liveSnapshot: (symbol: string, date?: string) =>
+    request<SessionView | null>(`/api/live/snapshot${qs({ symbol, date })}`),
 };

@@ -132,3 +132,33 @@ def test_no_data_stops_early_and_weekend_skips(tmp_path):
     assert r2.run_day(date(2026, 10, 3)) == {} and n2.sent == []
     r3, n3 = runner(tmp_path, [], holidays=frozenset({TODAY}))
     assert r3.run_day(TODAY) == {} and n3.sent == []
+
+
+def test_console_live_endpoints(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from atis.console.api import create_app
+    from atis.console.runtime import Runtime
+    from atis.console.settings import ConsoleSettings
+
+    live_dir = tmp_path / "live"
+    r, _ = runner(live_dir, path_session(TODAY, A1_DAY).bars)
+    r.run_day(TODAY)
+    rt = Runtime(tmp_path / "s.json", tmp_path / "j.json", ConsoleSettings(synthetic_days=8, warmup_sessions=3),
+                 start_worker=False)
+    try:
+        c = TestClient(create_app(rt, static_dir=tmp_path / "no-ui", live_dir=live_dir))
+        ov = c.get("/api/live").json()
+        assert ov["days"] == [TODAY.isoformat()] and ov["symbols"] == ["NIFTY"]
+        assert ov["heartbeat"]["status"] == "finished" and ov["runner_alive"] is False
+        assert ov["summary"]["signals"] == 2 and {s["key"] for s in ov["summary"]["by_setup"]} == {"NIFTY A1", "NIFTY A3"}
+        snap = c.get("/api/live/snapshot", params={"symbol": "nifty"}).json()
+        assert snap["symbol"] == "NIFTY" and snap["live"] is False and snap["bars"]
+        assert snap["signals"][0]["setup_id"] == "A1" and snap["signals"][0]["journal"]["status"] == "open"
+        assert c.get("/api/live/snapshot", params={"symbol": "NIFTY", "date": "2020-01-01"}).json() is None
+        assert c.get("/api/live/snapshot", params={"symbol": "../x"}).status_code == 422
+        assert c.get("/api/live/snapshot", params={"symbol": "NIFTY", "date": "bad"}).status_code == 422
+        empty = TestClient(create_app(rt, static_dir=tmp_path / "no-ui", live_dir=tmp_path / "none"))
+        assert empty.get("/api/live").json()["summary"]["signals"] == 0
+    finally:
+        rt.shutdown()

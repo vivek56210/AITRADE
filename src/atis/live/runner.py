@@ -19,6 +19,7 @@ from ..playbook.engine import PlaybookEngine, SessionReport
 from ..playbook.models import Bar, Session, SetupSignal
 from ..playbook.report import to_jsonable
 from ..playbook.state import DayContext
+from ..console.views import histogram, live_today, session_payload
 from .messages import eod_message, plan_message, signal_message
 from .telegram import esc
 
@@ -117,6 +118,7 @@ class LiveRunner:
             now = self.clock.now()
             for book in books.values():
                 self._poll(book, day, now, state)
+            self._heartbeat(day, now, books, "running")
             if now >= close_dt + timedelta(minutes=1):
                 break
             if (now >= open_dt + timedelta(minutes=self.cfg.no_data_cutoff_minutes)
@@ -126,7 +128,17 @@ class LiveRunner:
                            f"Stopping for today.")
                 break
             self.clock.sleep(self.cfg.poll_seconds)
-        return {sym: self._finish(book, day, state) for sym, book in books.items()}
+        result = {sym: self._finish(book, day, state) for sym, book in books.items()}
+        self._heartbeat(day, self.clock.now(), books, "finished")
+        return result
+
+    def _heartbeat(self, day: date, now: datetime, books: dict[str, Book], status: str) -> None:
+        self.cfg.state_dir.mkdir(parents=True, exist_ok=True)
+        payload = {"status": status, "day": day.isoformat(), "time": now.isoformat(timespec="seconds"),
+                   "symbols": {s: {"bars": len(b.bars),
+                                   "last_bar": b.bars[-1].ts.isoformat(timespec="minutes") if b.bars else None,
+                                   "stale": b.stale_alerted, "feed_errors": b.errors} for s, b in books.items()}}
+        (self.cfg.state_dir / f"heartbeat-{self.cfg.label}.json").write_text(json.dumps(payload))
 
     def _poll(self, book: Book, day: date, now: datetime, state: dict) -> None:
         t = self.cfg.times
@@ -152,7 +164,33 @@ class LiveRunner:
                     state["sent"].append(key)
                     self._save_state(day, state)
                 self.log(f"signal {key}")
+        if fresh:
+            self._snapshot(book, day, state, live=True)
         self._check_stale(book, day, now, state)
+
+    def snapshot_path(self, symbol: str, day: date) -> Path:
+        return self.cfg.state_dir / f"snapshot-{self.cfg.label}-{day}-{symbol}.json"
+
+    def _snapshot(self, book: Book, day: date, state: dict, live: bool) -> None:
+        """Today's chart data in the console's session format, rewritten as bars arrive."""
+        eng = book.engine
+        if eng.state is None or not book.bars:
+            return
+        sent = set(state["sent"])
+        signals = []
+        for sig in eng.signals:
+            d = to_jsonable(sig)
+            d["key"] = signal_key(sig)
+            d["journal"] = {"status": "open", "note": "Telegram sent" if d["key"] in sent else "not sent yet"}
+            signals.append(d)
+        payload = session_payload(symbol=book.symbol, day=day, live=live, bars=book.bars,
+                                  today=live_today(eng, self.cfg.params.value_area_pct), plan=eng.plan,
+                                  profile=histogram(eng.state.vp), signals=signals, skips=list(eng.state.skips))
+        self.cfg.state_dir.mkdir(parents=True, exist_ok=True)
+        path = self.snapshot_path(book.symbol, day)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload))
+        tmp.replace(path)
 
     def _check_stale(self, book: Book, day: date, now: datetime, state: dict) -> None:
         t = self.cfg.times
@@ -171,6 +209,7 @@ class LiveRunner:
 
     def _finish(self, book: Book, day: date, state: dict) -> tuple[SessionReport | None, list[TradeOutcome]]:
         eng = book.engine
+        self._snapshot(book, day, state, live=False)
         report = eng.end_session() if book.bars else None
         outcomes: list[TradeOutcome] = []
         if report:

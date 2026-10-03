@@ -18,12 +18,13 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--settings", default="atis_console.json", help="settings file (created on first save)")
     ap.add_argument("--journal", default="atis_journal.json", help="signal journal file")
     ap.add_argument("--autostart", action="store_true", help="start the replay immediately")
+    ap.add_argument("--live-dir", default="data/live", help="where atis-live writes snapshots and its journal")
     args = ap.parse_args(argv)
     rt = Runtime(Path(args.settings), Path(args.journal))
     if args.autostart:
         rt.start()
     print(f"ATIS console on http://{args.host}:{args.port}")
-    uvicorn.run(create_app(rt), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(create_app(rt, live_dir=Path(args.live_dir)), host=args.host, port=args.port, log_level="warning")
     rt.shutdown()
 
 

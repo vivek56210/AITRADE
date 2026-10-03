@@ -292,3 +292,7 @@ table.mini td { padding: 3px 0; }
 .month-bar { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
 .month-bar.pos { background: var(--good); }
 .month-bar.neg { background: var(--bad); }
+
+/* Live page */
+.table-wrap { overflow-x: auto; }
+button.chip { background: none; font: inherit; font-size: 12px; }

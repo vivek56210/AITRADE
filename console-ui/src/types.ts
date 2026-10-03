@@ -308,3 +308,53 @@ export interface SystemInfo {
   events_buffered: number;
   started: string;
 }
+
+export interface LiveJournalRow {
+  key: string;
+  date: string;
+  symbol: string;
+  setup: string;
+  time: string;
+  direction: "long" | "short" | "neutral";
+  entry: number;
+  stop: number | null;
+  structure: string;
+  lots: number;
+  r: number | null;
+  contained: boolean | null;
+  exit: string | null;
+}
+
+export interface LiveSetupStats {
+  key: string;
+  signals: number;
+  scored: number;
+  wins: number;
+  total_r: number;
+  condors: number;
+  contained: number;
+}
+
+export interface LiveHeartbeat {
+  status: "running" | "finished";
+  day: string;
+  time: string;
+  symbols: Record<string, { bars: number; last_bar: string | null; stale: boolean; feed_errors: number }>;
+}
+
+export interface LiveOverview {
+  live_dir: string;
+  heartbeat: LiveHeartbeat | null;
+  runner_alive: boolean;
+  days: string[];
+  symbols: string[];
+  summary: {
+    signals: number;
+    scored: number;
+    wins: number;
+    total_r: number;
+    by_setup: LiveSetupStats[];
+    by_day: { date: string; r: number }[];
+  };
+  journal: LiveJournalRow[];
+}

@@ -4,6 +4,7 @@ import { ControlBar } from "./components/ControlBar";
 import { usePoll } from "./hooks";
 import { BacktestPage } from "./pages/Backtest";
 import { DashboardPage } from "./pages/Dashboard";
+import { LivePage } from "./pages/Live";
 import { MarketPage } from "./pages/Market";
 import { MonitorPage } from "./pages/Monitor";
 import { SettingsPage } from "./pages/Settings";
@@ -13,6 +14,7 @@ import type { Status } from "./types";
 
 const PAGES = [
   { id: "dashboard", label: "Dashboard", icon: "◧" },
+  { id: "live", label: "Live alerts", icon: "◎" },
   { id: "market", label: "Market", icon: "⌁" },
   { id: "setups", label: "Setups", icon: "☰" },
   { id: "signals", label: "Signals", icon: "◉" },
@@ -25,7 +27,7 @@ type PageId = (typeof PAGES)[number]["id"];
 
 function currentPage(): PageId {
   const id = window.location.hash.replace(/^#\/?/, "");
-  return (PAGES.find((p) => p.id === id)?.id ?? "dashboard") as PageId;
+  return (PAGES.find((p) => p.id === id)?.id ?? "live") as PageId;
 }
 
 export interface PageProps {
@@ -77,6 +79,7 @@ export function App() {
         )}
         <main className="content">
           {page === "dashboard" && <DashboardPage {...props} />}
+          {page === "live" && <LivePage />}
           {page === "market" && <MarketPage {...props} />}
           {page === "setups" && <SetupsPage {...props} />}
           {page === "signals" && <SignalsPage {...props} />}

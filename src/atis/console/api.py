@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date as date_cls
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,8 @@ from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..live import reader as live_reader
+from ..live.feed import IST
 from .catalog import SETUP_IDS
 from .runtime import ConflictError, Runtime
 from .settings import SettingsError
@@ -16,7 +20,7 @@ from .settings import SettingsError
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
+def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR, live_dir: Path = Path("data/live")) -> FastAPI:
     app = FastAPI(title="ATIS console", version="0.1.0")
     rt = runtime
 
@@ -124,6 +128,21 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
     @app.get("/api/system")
     def system() -> dict[str, Any]:
         return rt.system()
+
+    @app.get("/api/live")
+    def live_overview() -> dict[str, Any]:
+        return live_reader.overview(live_dir, datetime.now(IST).replace(tzinfo=None))
+
+    @app.get("/api/live/snapshot")
+    def live_snapshot(symbol: str, date: str | None = None) -> dict[str, Any] | None:
+        if not symbol.isalpha():
+            raise HTTPException(422, "symbol must be letters only")
+        if date is not None:
+            try:
+                date_cls.fromisoformat(date)
+            except ValueError:
+                raise HTTPException(422, "date must be YYYY-MM-DD") from None
+        return live_reader.snapshot(live_dir, symbol.upper(), date)
 
     @app.get("/api/export/signals.csv", response_class=PlainTextResponse)
     def export_signals() -> PlainTextResponse:

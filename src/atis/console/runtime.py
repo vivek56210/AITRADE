@@ -29,8 +29,8 @@ from ..playbook.engine import PlaybookEngine, SessionReport, infer_bar_minutes
 from ..playbook.models import Session, SetupSignal
 from ..playbook.report import to_jsonable
 from ..playbook.state import DayContext
-from ..playbook.structure import SessionProfile
 from .catalog import GROUPS, SETUPS
+from .views import histogram, live_today, report_today, session_payload
 from .settings import LIVE_KEYS, ConsoleSettings, load_settings, save_settings, settings_from_dict, \
     settings_to_dict, schema
 
@@ -84,21 +84,6 @@ def _iso(ts: float | None) -> str | None:
 
 def signal_key(sig: SetupSignal) -> str:
     return f"{sig.ts.date()}|{sig.setup_id}|{sig.ts:%H:%M}"
-
-
-def _histogram(profile) -> list[list[float]]:
-    start, vols = profile.dense()
-    return [[profile.price(start + i), round(v, 1)] for i, v in enumerate(vols) if v > 0]
-
-
-def _levels(p: SessionProfile | None) -> dict[str, Any] | None:
-    if p is None:
-        return None
-    return {"date": p.date.isoformat(), "open": p.open, "high": p.high, "low": p.low, "close": p.close,
-            "poc": p.poc, "vah": p.vah, "val": p.val, "ib_high": p.ib_high, "ib_low": p.ib_low,
-            "hvns": list(p.hvns), "lvns": list(p.lvns), "single_prints": [list(z) for z in p.single_prints],
-            "poor_high": p.poor_high, "poor_low": p.poor_low, "day_type": p.day_type.value,
-            "shape": p.shape.value, "open_type": p.open_type.value if p.open_type else None}
 
 
 class Runtime:
@@ -543,49 +528,20 @@ class Runtime:
                 d is None or d == self.sessions[self.session_idx].date.isoformat())
             if live:
                 eng, st = self.engine, self.engine.state
-                plan, bars = eng.plan, st.bars
-                va = st.vp.value_area(self.settings.params.value_area_pct)
-                today = {"open": st.open, "high": st.high, "low": st.low, "last": st.last,
-                         "ib_high": st.ib_high, "ib_low": st.ib_low,
-                         "ib_class": st.ib_class.value if st.ib_class else None,
-                         "dpoc": st.dpoc(), "vah": va.vah if va else None, "val": va.val if va else None,
-                         "open_type": eng.open_type.value if eng.open_type else None,
-                         "open_location": st.open_loc.value if st.open_loc else None,
-                         "day_type": (st.developing_day_type() or eng.day_type_check or None),
-                         "is_expiry": st.is_expiry}
-                if today["day_type"] is not None:
-                    today["day_type"] = today["day_type"].value
-                profile, signals, skips = _histogram(st.vp), eng.signals, list(st.skips)
-                session_date = st.date
+                plan, bars, session_date = eng.plan, st.bars, st.date
+                today = live_today(eng, self.settings.params.value_area_pct)
+                profile, signals, skips = histogram(st.vp), eng.signals, list(st.skips)
             else:
                 rep = next((r for r in reversed(self.reports) if d is None or r.date.isoformat() == d), None)
                 if rep is None:
                     return None
-                p = rep.profile
                 plan, session_date = rep.plan, rep.date
                 bars = next(x.bars for x in self.sessions if x.date == rep.date)
-                today = {"open": p.open, "high": p.high, "low": p.low, "last": p.close,
-                         "ib_high": rep.ib_high, "ib_low": rep.ib_low,
-                         "ib_class": rep.ib_class.value if rep.ib_class else None,
-                         "dpoc": p.poc, "vah": p.vah, "val": p.val,
-                         "open_type": rep.open_type.value if rep.open_type else None,
-                         "open_location": rep.open_location.value if rep.open_location else None,
-                         "day_type": p.day_type.value, "is_expiry": plan.is_expiry}
-                profile, signals, skips = _histogram(p.profile), rep.signals, rep.skipped
-            prior = plan.prior
-            return {
-                "date": session_date.isoformat(), "live": live, "symbol": self.settings.symbol,
-                "bars": [[b.ts.isoformat(timespec="minutes"), b.open, b.high, b.low, b.close, b.volume] for b in bars],
-                "today": today, "prior": _levels(prior),
-                "prior_profile": _histogram(prior.profile) if prior else [],
-                "profile": profile,
-                "balance": to_jsonable(plan.balance) if plan.balance else None,
-                "plan": {"scenarios": plan.scenarios, "warnings": plan.warnings, "avg_ib": round(plan.avg_ib, 1),
-                         "nearest_expiry": plan.nearest_expiry.isoformat(), "is_expiry": plan.is_expiry},
-                "signals": [self._signal_view(s) for s in signals],
-                "skips": [{"time": t.strftime("%H:%M") if t else None, "setup": sid, "reason": why}
-                          for t, sid, why in skips],
-            }
+                today = report_today(rep)
+                profile, signals, skips = histogram(rep.profile.profile), rep.signals, rep.skipped
+            return session_payload(symbol=self.settings.symbol, day=session_date, live=live, bars=bars,
+                                   today=today, plan=plan, profile=profile,
+                                   signals=[self._signal_view(s) for s in signals], skips=skips)
 
     def sessions_list(self) -> list[dict[str, Any]]:
         with self._lock:
