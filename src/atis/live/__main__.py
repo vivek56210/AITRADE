@@ -97,6 +97,9 @@ def main(argv: list[str] | None = None) -> int:
                        f"{', '.join(map(str, sorted(holidays))) or 'none'}")
             runner = LiveRunner(_config(args, "live"), UpstoxIntradayFeed(), notifier, clock, history,
                                 holidays, log_stderr)
+            if clock.now() >= datetime.combine(today, runner.cfg.times.close):
+                log_stderr("market already closed for today - nothing to do")
+                return 0
             open_at = datetime.combine(today, runner.cfg.times.open) - timedelta(minutes=10)
             if clock.now() < open_at:
                 log_stderr(f"waiting until {open_at:%H:%M} to start")

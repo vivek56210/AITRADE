@@ -162,3 +162,12 @@ def test_console_live_endpoints(tmp_path):
         assert empty.get("/api/live").json()["summary"]["signals"] == 0
     finally:
         rt.shutdown()
+
+
+def test_run_after_close_exits_without_messages(tmp_path, monkeypatch, capsys):
+    from atis.live import __main__ as cli
+
+    monkeypatch.setattr(cli.SystemClock, "now", lambda self: datetime.combine(TODAY, datetime.min.time()).replace(hour=18))
+    monkeypatch.setattr(cli, "load_expiry_holidays", lambda d, t: (frozenset(), "test"))
+    assert cli.main(["run", "--dry-run", "--state-dir", str(tmp_path)]) == 0
+    assert "already closed" in capsys.readouterr().err and not list(tmp_path.glob("state-*"))
