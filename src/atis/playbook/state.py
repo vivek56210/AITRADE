@@ -7,7 +7,7 @@ from typing import Any
 from .config import InstrumentSpec, PlaybookParams, SessionTimes
 from .models import Bar, DayType, IBClass, OpenLocation, PeriodStat
 from .profile import TPOProfile, VolumeProfile
-from .structure import Balance, SessionProfile, classify_day_type, open_location
+from .structure import Balance, HigherTimeframe, SessionProfile, classify_day_type, open_location
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,7 @@ class SessionState:
     avg_range: float | None
     avg_va_width: float | None
     is_expiry: bool
+    htf: HigherTimeframe | None = None
     vp: VolumeProfile = None
     tpo: TPOProfile = None
     bars: list[Bar] = field(default_factory=list)
@@ -64,6 +65,8 @@ class SessionState:
     flags: dict[str, Any] = field(default_factory=dict)
     now: datetime | None = None
     skips: list[tuple[datetime | None, str, str]] = field(default_factory=list)
+    pv_sum: float = 0.0
+    v_sum: float = 0.0
 
     def __post_init__(self) -> None:
         self.vp = VolumeProfile(self.spec.row_size)
@@ -112,6 +115,28 @@ class SessionState:
         if self.prior is None or self.open is None:
             return None
         return open_location(self.open, self.prior.value_area)
+
+    @property
+    def vwap(self) -> float | None:
+        """Session VWAP (a time-weighted average on spot data, where every minute has volume 1)."""
+        return self.pv_sum / self.v_sum if self.v_sum > 0 else None
+
+    def references(self) -> list[tuple[str, float]]:
+        """Every pre-market map level: prior day, its single prints, composite balance, prior week, naked POCs."""
+        out: list[tuple[str, float]] = []
+        if self.prior:
+            out += list(self.prior.references().items())
+            for lo, hi in self.prior.single_prints:
+                out += [("single-print edge", lo), ("single-print edge", hi)]
+        if self.balance:
+            b = self.balance
+            out += [("composite VAH", b.vah), ("composite VAL", b.val), ("composite POC", b.poc)]
+        if self.htf and self.htf.week_value:
+            w = self.htf.week_value
+            out += [("prior-week VAH", w.vah), ("prior-week VAL", w.val), ("prior-week POC", w.poc)]
+        if self.htf:
+            out += [("naked POC", p) for p in self.htf.naked_pocs]
+        return out
 
     def dpoc(self) -> float | None:
         return self.vp.poc()

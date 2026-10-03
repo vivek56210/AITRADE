@@ -5,6 +5,16 @@ import type { JournalEntry, Signal } from "../types";
 import { Badge, DirectionBadge } from "./ui";
 
 const JOURNAL_TONE = { open: "muted", taken: "good", ignored: "warn" } as const;
+const GRADE_TONE = { "A+": "good", B: "info", C: "bad" } as const;
+
+function GradeBadge({ s }: { s: Signal }) {
+  if (!s.grade) return null;
+  return (
+    <Badge tone={GRADE_TONE[s.grade]} title={(s.grade_factors ?? []).join("\n")}>
+      {s.grade} {s.score !== undefined ? `(${s.score >= 0 ? "+" : ""}${s.score})` : ""}
+    </Badge>
+  );
+}
 
 export function SignalSummary({ s, compact = false }: { s: Signal; compact?: boolean }) {
   if (compact) {
@@ -12,6 +22,7 @@ export function SignalSummary({ s, compact = false }: { s: Signal; compact?: boo
       <div className="sig-summary compact" title={`${s.name} · ${s.option_plan.structure}`}>
         <span className="mono muted">{s.ts.slice(5, 10)} {hhmm(s.ts)}</span>
         <Badge tone="accent">{s.setup_id}</Badge>
+        <GradeBadge s={s} />
         <DirectionBadge direction={s.direction} />
         <span className="mono">@ {fmt(s.entry)}</span>
         <span className="muted small">{s.lots}L</span>
@@ -23,6 +34,7 @@ export function SignalSummary({ s, compact = false }: { s: Signal; compact?: boo
     <div className="sig-summary">
       <span className="mono">{s.ts.slice(0, 10)} {hhmm(s.ts)}</span>
       <Badge tone="accent">{s.setup_id}</Badge>
+      <GradeBadge s={s} />
       <span className="sig-name">{s.name}</span>
       <DirectionBadge direction={s.direction} />
       <span className="mono">@ {fmt(s.entry)}</span>
@@ -96,6 +108,16 @@ export function SignalDetail({ s, onJournal }: { s: Signal; onJournal?: (j: Jour
           </p>
         </div>
         <div>
+          {s.grade && (
+            <>
+              <h4>Grade {s.grade} · score {s.score}</h4>
+              <ul className="checks">
+                {(s.grade_factors ?? []).map((f, i) => (
+                  <li key={i} className={f.startsWith("+") ? "yes" : "no"}>{f}</li>
+                ))}
+              </ul>
+            </>
+          )}
           <h4>Confirmations & notes</h4>
           <ul className="checks">
             {Object.entries(s.confirmations).map(([k, v]) => (

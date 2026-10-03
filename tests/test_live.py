@@ -202,3 +202,17 @@ def test_loss_limit_seeded_from_journal_and_announced_once(tmp_path):
     assert r.ledger.week(TODAY) == -6.0
     assert not any("A1 LONG" in t for t in n.sent)
     assert sum("weekly loss limit" in t for t in n.sent) == 1
+
+
+def test_signal_message_shows_grade_and_low_grades_are_held(tmp_path):
+    from atis.live.runner import signal_key
+    r, n = runner(tmp_path, path_session(TODAY, A1_DAY).bars)
+    r.cfg.min_grade = "A+"
+    _, outcomes = r.run_day(TODAY)["NIFTY"]
+    held = set(json.loads(r.state_path(TODAY).read_text())["held"])
+    assert held == {signal_key(o.signal) for o in outcomes if o.signal.grade != "A+"}
+    alerts = [t for t in n.sent if "<b>Grade " in t]
+    assert len(alerts) == sum(o.signal.grade == "A+" for o in outcomes)
+    assert all("Grade A+" in t for t in alerts)
+    rows = [json.loads(x) for x in (tmp_path / "journal-live.jsonl").read_text().splitlines()]
+    assert len(rows) == len(outcomes) and all(row["grade"] in ("A+", "B", "C") for row in rows)

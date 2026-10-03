@@ -36,7 +36,8 @@ def _config(args, label: str) -> LiveConfig:
     risk = replace(RiskParams(), capital=args.capital, risk_per_trade=args.risk_pct / 100)
     return LiveConfig(symbols=tuple(s.strip().upper() for s in args.symbols.split(",") if s.strip()),
                       state_dir=Path(args.state_dir), risk=risk, label=label,
-                      disabled_setups=tuple(x.strip().upper() for x in (args.disable or "").split(",") if x.strip()))
+                      disabled_setups=tuple(x.strip().upper() for x in (args.disable or "").split(",") if x.strip()),
+                      min_grade=args.min_grade)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--capital", type=float, default=RiskParams.capital)
         p.add_argument("--risk-pct", type=float, default=RiskParams.risk_per_trade * 100)
         p.add_argument("--disable", help="comma-separated setup ids to switch off, e.g. B1,B2,C2")
+        p.add_argument("--min-grade", default="B", choices=("A+", "B", "C"),
+                       help="lowest signal grade sent to Telegram (all signals are journaled)")
         p.add_argument("--dry-run", action="store_true", help="print messages instead of sending them")
         p.add_argument("--state-dir", default="data/live")
         p.add_argument("--cache", default="data/upstox")

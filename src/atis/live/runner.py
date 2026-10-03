@@ -16,6 +16,7 @@ from pathlib import Path
 from ..playbook.backtest import TradeOutcome, simulate_directional, simulate_premium
 from ..playbook.config import INSTRUMENTS, PlaybookParams, RiskParams, SessionTimes
 from ..playbook.engine import PlaybookEngine, SessionReport
+from ..playbook.grading import at_least
 from ..playbook.models import Bar, Session, SetupSignal
 from ..playbook.report import to_jsonable
 from ..playbook.state import DayContext
@@ -39,6 +40,9 @@ class LiveConfig:
     times: SessionTimes = field(default_factory=SessionTimes)
     disabled_setups: tuple[str, ...] = ()
     label: str = "live"
+    # Lowest grade sent to Telegram. C (score < 0) lost money in every NSE sample (2022-2026); every
+    # signal is still journaled. A+ did not beat B out of sample, so B stays on.
+    min_grade: str = "B"
 
 
 @dataclass
@@ -181,7 +185,12 @@ class LiveRunner:
             book.bars.append(bar)
             for sig in book.engine.on_bar(bar):
                 key = signal_key(sig)
-                if key in state["sent"]:
+                if key in state["sent"] or key in state.setdefault("held", []):
+                    continue
+                if not at_least(sig.grade, self.cfg.min_grade):
+                    state["held"].append(key)
+                    self._save_state(day, state)
+                    self.log(f"signal {key} graded {sig.grade} - journaled, not alerted")
                     continue
                 text = signal_message(sig)
                 if now - sig.ts > timedelta(minutes=3):
@@ -267,6 +276,7 @@ class LiveRunner:
                     "time": f"{s.ts:%H:%M}", "direction": s.direction.value, "entry": s.entry, "stop": s.stop,
                     "structure": s.option_plan.structure.value, "lots": s.lots, "r": o.r_multiple,
                     "contained": o.contained, "exit": o.exit_reason, "size": s.size_multiplier,
+                    "grade": s.grade, "score": s.score,
                     "legs": to_jsonable(s.option_plan.legs),
                 }) + "\n")
 

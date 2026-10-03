@@ -38,6 +38,8 @@ def signal_message(sig: SetupSignal) -> str:
     if sig.targets:
         lines.append("Targets: " + ", ".join(f"{_n(t.price, 1)} ({esc(t.label)}, {t.size_pct:g}%)"
                                               for t in sig.targets))
+    if sig.grade:
+        lines.append(f"<b>Grade {esc(sig.grade)}</b> (score {sig.score:+d}): " + esc("; ".join(sig.grade_factors) or "no factors"))
     checks = [f"{k} {'yes' if v else 'no'}" for k, v in sig.confirmations.items() if v is not None]
     if checks:
         lines.append("Checks: " + esc(", ".join(checks)))
@@ -56,6 +58,11 @@ def plan_message(plan: PremarketPlan, day: date) -> str:
     if plan.balance:
         b = plan.balance
         lines.append(f"Balance {len(b.sessions)}d: {_n(b.val)}-{_n(b.vah)}" + (" (quiet)" if b.quiet else ""))
+    if plan.htf and plan.htf.week_value:
+        w = plan.htf.week_value
+        lines.append(f"Prior week VA {_n(w.val)}-{_n(w.vah)} | POC {_n(w.poc)}")
+    if plan.htf and plan.htf.naked_pocs:
+        lines.append("Naked POCs: " + ", ".join(_n(x) for x in plan.htf.naked_pocs[-4:]))
     lines.append(f"Expiry {plan.nearest_expiry:%a %d %b}" + (" - TODAY" if plan.is_expiry else ""))
     lines += [f"- {esc(w)}" for w in plan.warnings if "CANDIDATE" not in w]
     return "\n".join(lines)

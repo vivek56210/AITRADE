@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 
 from .config import CostParams, InstrumentSpec, PlaybookParams, RiskParams, SessionTimes
 from .expiry import is_monthly_expiry_day, nearest_expiry, sessions_until
+from .grading import grade_candidate
 from .models import (Bar, Candidate, DayType, IBClass, OpenLocation, OpenType, PeriodStat, Session,
                      SetupSignal, Target)
 from .options import OptionPlanner
@@ -16,9 +17,9 @@ from .risk import round_trip_costs, size_trade
 from .setups import DETECTORS
 from .state import BarEvent, DayContext, SessionState
 from .trade import RiskLedger, TradeState
-from .structure import (Balance, SessionProfile, TPO_LETTERS, analyze_session, average_ib, average_range,
-                        average_va_width, classify_ib, classify_open, detect_balance, period_index,
-                        session_start, value_migration)
+from .structure import (Balance, HigherTimeframe, SessionProfile, TPO_LETTERS, analyze_session, average_ib,
+                        average_range, average_va_width, classify_ib, classify_open, detect_balance,
+                        higher_timeframe, period_index, session_start, value_migration)
 
 
 @dataclass
@@ -27,6 +28,7 @@ class PremarketPlan:
     date: date
     prior: SessionProfile | None
     balance: Balance | None
+    htf: HigherTimeframe | None
     migration: int
     avg_ib: float
     is_expiry: bool
@@ -113,6 +115,7 @@ class PlaybookEngine:
             avg_ib=average_ib(h, p.ib_lookback) or 0.0, avg_range=average_range(h, p.ib_lookback),
             avg_va_width=average_va_width(h, p.ib_lookback),
             is_expiry=self.spec.expiry_day_rules and nearest_expiry(self.spec, d, ctx.holidays) == d,
+            htf=higher_timeframe(h, d, p),
         )
         self._st = st
         self._period: PeriodStat | None = None
@@ -153,6 +156,8 @@ class PlaybookEngine:
         st.bars.append(bar)
         st.deltas.append(delta)
         st.vp.add_bar(bar)
+        st.pv_sum += (bar.high + bar.low + bar.close) / 3 * bar.volume
+        st.v_sum += bar.volume
         st.tpo.add(idx, bar.low, bar.high)
         self._period = self._update_bucket(self._period, bar, delta, idx, self.times.period_minutes)
         self._candle = self._update_bucket(self._candle, bar, delta, idx15, 15)
@@ -335,6 +340,7 @@ class PlaybookEngine:
             notes.append("expiry day: exit before the 15:15 closing auction session")
         if st.ctx.vix_rising and not cand.structure.is_short_premium:
             notes.append("India VIX rising - confirm it is not spiking against the trade")
+        graded = grade_candidate(st, cand)
         planner = OptionPlanner(self.spec, self.params, st.ctx.basis, st.ctx.iv, st.ctx.rate, st.ctx.holidays)
         plan = planner.build(cand, bar.close, st.now)
         sizing = size_trade(cand, plan, self.spec.lot_size, self.risk)
@@ -352,6 +358,7 @@ class PlaybookEngine:
             size_multiplier=cand.size_multiplier,
             est_costs=round_trip_costs(plan, sizing.lots, self.spec.lot_size, self.costs),
             confirmations=cand.confirmations, notes=notes,
+            grade=graded.grade, score=graded.score, grade_factors=list(graded.factors),
         )
         if sig.stop is not None and sig.direction.sign:
             self._live.append(sig)
@@ -391,6 +398,11 @@ class PlaybookEngine:
         if b:
             scen.append(f"Composite balance {b.val:g}-{b.vah:g} (POC {b.poc:g}, {len(b.sessions)} sessions): "
                         f"breakout + retest -> A4" + ("; quiet near POC -> C3 positional condor" if b.quiet else ""))
+        if st.htf and st.htf.week_value:
+            w = st.htf.week_value
+            scen.append(f"Prior week value {w.val:g}-{w.vah:g} (POC {w.poc:g})")
+        if st.htf and st.htf.naked_pocs:
+            scen.append("Naked POCs (untested): " + ", ".join(f"{x:g}" for x in st.htf.naked_pocs[-5:]))
         if st.migration:
             warn.append(f"value migrating {'higher' if st.migration > 0 else 'lower'} for "
                         f"{self.params.migration_sessions} sessions - fades against it need strong rejection")
@@ -409,5 +421,5 @@ class PlaybookEngine:
         if st.ctx.vix_rising:
             warn.append("India VIX rising: no premium selling today")
         warn.append("All setups are CANDIDATE (unvalidated) - backtest on futures data before risking capital")
-        return PremarketPlan(self.spec.symbol, st.date, pr, b, st.migration, st.avg_ib, st.is_expiry,
+        return PremarketPlan(self.spec.symbol, st.date, pr, b, st.htf, st.migration, st.avg_ib, st.is_expiry,
                              expiry, scen, warn)

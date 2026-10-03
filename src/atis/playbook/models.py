@@ -200,3 +200,6 @@ class SetupSignal:
     confirmations: dict[str, bool | None]
     notes: list[str]
     validation_status: str = "CANDIDATE"
+    grade: str = ""  # A+ / B / C by confluence (grading.py)
+    score: int = 0
+    grade_factors: list[str] = field(default_factory=list)

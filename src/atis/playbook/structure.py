@@ -280,3 +280,34 @@ def value_migration(history: list[SessionProfile], n: int) -> int:
     if all(b.poc < a.poc and b.vah <= a.vah for a, b in pairwise(w)):
         return -1
     return 0
+
+
+@dataclass(frozen=True)
+class HigherTimeframe:
+    """References above the daily profile: last calendar week's value and untested (naked) POCs."""
+
+    week_start: date | None
+    week_value: ValueArea | None
+    naked_pocs: tuple[float, ...]
+
+
+def prior_week_value(history: list[SessionProfile], d: date, params: PlaybookParams) -> tuple[date, ValueArea] | None:
+    monday = d - timedelta(days=d.weekday())
+    start = monday - timedelta(days=7)
+    week = [p for p in history if start <= p.date < monday]
+    if len(week) < 2:
+        return None
+    va = VolumeProfile.combine(p.profile for p in week).value_area(params.value_area_pct)
+    return (start, va) if va else None
+
+
+def naked_pocs(history: list[SessionProfile], lookback: int = 20) -> tuple[float, ...]:
+    """POCs of recent sessions that no later session has traded through (the latest session excluded)."""
+    recent = history[-lookback:]
+    return tuple(p.poc for i, p in enumerate(recent[:-1])
+                 if not any(q.low <= p.poc <= q.high for q in recent[i + 1:]))
+
+
+def higher_timeframe(history: list[SessionProfile], d: date, params: PlaybookParams) -> HigherTimeframe:
+    wk = prior_week_value(history, d, params)
+    return HigherTimeframe(wk[0] if wk else None, wk[1] if wk else None, naked_pocs(history))

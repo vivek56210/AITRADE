@@ -79,6 +79,9 @@ export interface Signal {
   confirmations: Record<string, boolean | null>;
   notes: string[];
   validation_status: string;
+  grade?: "A+" | "B" | "C" | "";
+  score?: number;
+  grade_factors?: string[];
   journal: JournalEntry;
 }
 

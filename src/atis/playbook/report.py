@@ -112,6 +112,15 @@ def format_backtest(res: BacktestResult) -> str:
             lines.append(f"  {sid}: {s.trades} trades, win {s.win_rate:.0%}, avg {s.avg_r:+.2f}R, total {s.total_r:+.2f}R")
         if s.premium_trades:
             lines.append(f"  {sid}: {s.premium_trades} premium trades, contained {s.containment_rate:.0%}")
+    if sm["by_grade"]:
+        lines.append("by grade:")
+        for g, d in sm["by_grade"].items():
+            part = f"  {g}: "
+            if d["trades"]:
+                part += f"{d['trades']} trades, avg {d['avg_r']:+.3f}R, total {d['total_r']:+.2f}R, win {d['win_rate']:.0%}"
+            if d["premium"]:
+                part += f"{'; ' if d['trades'] else ''}{d['premium']} premium, contained {d['contained']}"
+            lines.append(part)
     if sm["monthly_r"]:
         lines.append("monthly R: " + ", ".join(f"{k} {v:+.1f}" for k, v in sm["monthly_r"].items()))
     return "\n".join(lines)

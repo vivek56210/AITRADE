@@ -90,7 +90,24 @@ class BacktestResult:
             "total_cost_r": round(cum - net["total"], 3), "total_r_net": net["total"],
             "win_rate_net": net["win_rate"], "profit_factor_net": net["profit_factor"],
             "max_drawdown_r_net": net["max_drawdown"],
+            "by_grade": by_grade(self.outcomes),
         }
+
+
+def by_grade(outcomes: list[TradeOutcome]) -> dict[str, dict]:
+    """Directional R and premium containment per signal grade."""
+    out: dict[str, dict] = {}
+    for g in sorted({o.signal.grade for o in outcomes}):
+        os_ = [o for o in outcomes if o.signal.grade == g]
+        d = [o for o in os_ if o.r_multiple is not None]
+        prem = [o for o in os_ if o.contained is not None]
+        gross = sum(o.r_multiple for o in d)
+        net = sum(o.net_r for o in d)
+        out[g or "-"] = {"trades": len(d), "total_r": round(gross, 2), "avg_r": gross / len(d) if d else None,
+                         "total_r_net": round(net, 2), "avg_r_net": net / len(d) if d else None,
+                         "win_rate": sum(o.r_multiple > 0 for o in d) / len(d) if d else None,
+                         "premium": len(prem), "contained": sum(bool(o.contained) for o in prem)}
+    return out
 
 
 def _curve(rs: list[float]) -> dict:
