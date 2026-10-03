@@ -191,6 +191,27 @@ Upstox spot baselines (R before costs, 3 warm-up sessions), for comparison with 
 | NIFTY | 2026-08-03 → 2026-10-01 | 63 | −0.70 | 59% | 0.97 | −7.8R |
 | BANKNIFTY | 2026-08-03 → 2026-10-01 | 56 | +0.71 | 61% | 1.04 | −5.5R |
 
+Same window on Dhan futures (`run --dhan --from 2026-07-29 --to 2026-10-01`, back-adjusted, 43 sessions):
+
+| Futures (Dhan) | Signals | Total R | Win | PF | Max DD | vs spot, same window |
+|---|---|---|---|---|---|---|
+| NIFTY | 54 | −2.61 | 52% | 0.89 | −8.0R | −1.9R |
+| BANKNIFTY | 57 | −8.94 | 42% | 0.65 | −15.2R | −9.7R |
+
+Read this as a data-quality result, not a verdict on futures profiles. Because the Sep contract has expired,
+every day up to 2026-09-29 comes from the **next-month** Oct contract, which barely trades then. Share of
+session minutes with zero volume:
+
+| | Aug (next month) | Sep 1–29 (next month) | Sep 30 (front month) |
+|---|---|---|---|
+| NIFTY | 23.7% | 3.9% | 0.0% |
+| BANKNIFTY | 54.8% | 24.0% | 0.0% |
+
+The worst underperformance is where the profile is built from the sparsest prints: BANKNIFTY in August
+(−9.6R). With ~55 trades a side, the NIFTY difference is within noise. A meaningful spot-vs-futures
+comparison needs front-month history. That builds up in the cache from now on: each month is saved while
+its contract is still active, and Dhan keeps no intraday history after expiry.
+
 CSV columns: `timestamp,open,high,low,close,volume[,buy_volume,sell_volume]` (IST). Without
 buy/sell volume, order flow is estimated with the tick rule and delta-divergence confirmation is
 reported as `n/a`. Without `--iv`, option premiums are not priced and sizing falls back to an
