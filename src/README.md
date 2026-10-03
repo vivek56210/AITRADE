@@ -234,6 +234,52 @@ reported as `n/a`. Without `--iv`, option premiums are not priced and sizing fal
 assumed delta. The backtest scores futures R-multiples and condor containment — **not option P&L**.
 Every threshold lives in `config.py` as a proposed default (P).
 
+### Out-of-sample check, loss limits and grading
+
+**Out of sample, the playbook has no edge on NSE spot.** These numbers include the loss limits
+below and are R before costs:
+
+| Spot (Upstox) | 2025-10 → 2026-10 (the window above) | **2022-01 → 2025-09 (out of sample)** |
+|---|---|---|
+| NIFTY | 362 trades, +6.1R, PF 1.04 | **1,388 trades, −0.5R, PF 1.00** |
+| BANKNIFTY | 339 trades, +26.2R, PF 1.20 | **1,384 trades, −68.8R, PF 0.88** |
+
+The positive year was the window, not a durable edge. Only B3 (failed IB breakout) is positive in
+every window on both indices, at +0.003 to +0.21R per trade.
+
+**Loss limits.** Implemented in `trade.py` and the engine.
+
+- `TradeState` is now the single implementation of how a trade plays out. The backtest replays
+  it, and the engine updates it bar by bar.
+- That gives realized R during the day, recorded in a `RiskLedger`.
+- New trades stop once today's loss reaches `daily_loss_limit / risk_per_trade` (3R), or this
+  week's reaches `weekly_loss_limit / risk_per_trade` (6R).
+- The live runner shares one ledger across NIFTY and BANKNIFTY, so the limits are account-wide.
+  It seeds the ledger from this week's paper journal and announces a hit limit once on Telegram.
+
+**Grading** (`grading.py`). Every signal gets A+ / B / C from rules fixed before testing:
+
+| Factor | Score |
+|---|---|
+| Entry or stop at a pre-market map level: prior day, single prints, composite balance, prior-week value, naked POCs | +1 |
+| Structure confirmations | ±1 |
+| Real order flow (estimated flow scores 0) | ±1 |
+| With / against value migration | ±1 |
+| VWAP side, for initiative trades | ±1 |
+| First target ≥ 1.5R away (+1) or < 1R away (−1) | ±1 |
+| Fees above 0.2R | −1 |
+
+The pre-market plan and Telegram plan also show the prior-week value area and naked POCs.
+
+| R per trade by grade | NIFTY 2022–25 | BANKNIFTY 2022–25 | NIFTY 2025–26 | BANKNIFTY 2025–26 |
+|---|---|---|---|---|
+| A+ | +0.001 (716) | −0.051 (748) | +0.050 (204) | −0.004 (183) |
+| B | +0.019 (617) | −0.037 (594) | −0.011 (153) | +0.197 (143) |
+| C | −0.240 (55) | −0.215 (42) | −0.482 (5) | −0.090 (13) |
+
+A+ does not beat B out of sample. C is negative in all four samples, so `atis-live` sends grade B
+and above (`--min-grade`). Every signal is still journaled with its grade.
+
 ### Operator console (UI)
 
 `src/atis/console` (FastAPI) runs the engine in a background **replay worker** and serves the
@@ -309,6 +355,20 @@ What the results show:
 - **Conclusion.** The NSE playbook does not carry over to crypto as-is. Crypto alerts are not wired
   into `atis-live`.
 
+**Real order flow** (`--source binance`, `binance.py`). Binance's free 1-minute USD-M archives
+include taker-buy volume, so every bar gets a true aggressor split. The engine's delta,
+cumulative-delta and divergence checks then run on real data, scored with Delta's fees. Two years,
+same windows:
+
+| Test | Result |
+|---|---|
+| Real flow as a confirmation inside the 13 setups | No change: gross is still about 0R per trade in all six configurations. "Flow confirms" beat "flow disagrees" in only 3 of 6 |
+| **R1** (`setups/reaction.py`, off by default, `reaction_setups`) | Fades a probe of a pre-market map level once price closes back away from it. With real flow it also needs absorption or a delta divergence at the probe |
+| R1 with real flow vs without | Better in 4 of 6 configurations. Best: BTC New York hours, +0.097R/trade gross vs −0.045 |
+| R1 after fees | −0.38 to −0.86R per trade: its stops are tight, so fees are a large share of risk |
+| R1 on NSE spot (structure only) | −0.053 / −0.066R per trade in 2022–25, about flat in 2025–26 |
+| Trailing the stop over the last 30 bars after the first target (`trail_bars`) | Worse in 10 of 12 comparisons |
+
 ### Live Telegram alerts (paper trading)
 
 `atis-live` runs the same engine on today's 1-minute NIFTY/BANKNIFTY index candles. It uses the
@@ -328,6 +388,25 @@ atis-live summary               # paper results so far
 The runner skips weekends and holidays. Holidays are inferred from shifted option expiries in the
 exchange scrip master. The runner warns on a stale feed, survives restarts without resending, and
 writes a snapshot, a heartbeat and a journal to `data/live` for the console's Live alerts page.
+
+### Recording NSE order flow (Dhan live feed)
+
+Historical NSE ticks with the aggressor side are not available to retail traders, so `atis-live
+record` builds that history going forward.
+
+- **Instruments.** It subscribes to the front-month NIFTY / BANKNIFTY futures in Dhan's full mode
+  (last trade, cumulative volume, 5-level depth). The packet layouts follow Dhan's official SDK.
+- **Classification.** Each traded quantity is classified as buyer- or seller-initiated against the
+  quotes in force before it: at or above the ask is a buy, at or below the bid is a sell, and the
+  tick rule applies inside the spread.
+- **Output:**
+  - `data/flow/<SYMBOL>/<date>.csv`: 1-minute bars with `buy_volume` / `sell_volume` / `oi`. These
+    load with `atis-playbook run --csv` and give the engine real delta.
+  - `<date>-ticks.csv.gz`: every update, for later research.
+- **Requirements.** `pip install -e '.[record]'`, `DHAN_CLIENT_ID` / `DHAN_ACCESS_TOKEN` and an
+  active Dhan Data API plan. Dhan tokens currently last about 24 hours. On the VM,
+  `deploy/oracle/enable-recorder.sh` installs a weekday 08:57 IST timer, and `sudo atis-dhan-token`
+  pastes a fresh token.
 
 ### Run it on an Oracle Cloud Always Free VM
 

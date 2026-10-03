@@ -117,7 +117,8 @@ empty until Monday's session starts.
 |---|---|
 | 08:55 | The runner starts; the VM may sleep until 09:05 |
 | ~09:05 | Telegram: a plan for NIFTY and BANKNIFTY, then "ATIS live started" |
-| 09:15–15:30 | Telegram: each setup as it fires (entry, stop, targets, option legs, lots), marked *paper trade only*; the Live alerts page refreshes every 15 s |
+| 09:15–15:30 | Telegram: each setup as it fires (entry, stop, targets, option legs, lots), with its **grade (A+ / B)** and the reasons, marked *paper trade only*. C-grade signals are journaled but not sent. The Live alerts page refreshes every 15 s |
+| A loss limit is hit | Telegram, once: the daily (−3R) or weekly (−6R) loss limit is reached. No new alerts until it resets |
 | If the feed stalls | Telegram: "no new data since …", then "data resumed" |
 | 15:31 | Telegram: day summary with the paper result per signal. It's also added to the journal on the Live alerts page |
 
@@ -142,6 +143,22 @@ ATIS_LIVE_ARGS="--symbols NIFTY,BANKNIFTY --capital 500000 --risk-pct 1 --disabl
 ```
 
 To change the token or password, run `sudo bash atis-setup.sh` again. It keeps everything else.
+Add `--min-grade A+` to `ATIS_LIVE_ARGS` to receive only A+ signals. Out of sample, A+ did not beat
+B, so the default is B.
+
+## Optional: record real NSE order flow (Dhan)
+
+This builds a history of NIFTY/BANKNIFTY futures trades split into buyer- and seller-initiated
+volume, which can't be downloaded. It needs your **Dhan client id, an access token and an active
+Dhan Data API plan**. It's read-only market data; no orders.
+
+```bash
+sudo bash /opt/atis/deploy/oracle/enable-recorder.sh   # once: client id + token, installs the 08:57 IST weekday timer
+sudo atis-dhan-token                                   # each morning before 08:57: paste a fresh token
+```
+
+Dhan access tokens currently last about 24 hours. If the token has expired or the data plan
+lapses, the recorder stops and tells you on Telegram. Data lands in `/var/lib/atis/data/flow/`.
 
 ## Keeping it free
 
