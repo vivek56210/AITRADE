@@ -36,7 +36,8 @@ env_get() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | tail -1 | sed
 # ---------------------------------------------------------------- packages
 say "System packages"
 export DEBIAN_FRONTEND=noninteractive
-timedatectl set-timezone Asia/Kolkata || true
+# timezone by file link only (timedatectl can step the clock on some hosts); timers and the app use IST explicitly
+ln -sf /usr/share/zoneinfo/Asia/Kolkata /etc/localtime && echo Asia/Kolkata > /etc/timezone
 if [ "$(awk '/MemTotal/ {print $2}' /proc/meminfo)" -lt 2000000 ] && ! swapon --show | grep -q .; then
   say "Small VM: adding a 2 GB swap file"
   fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
