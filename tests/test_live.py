@@ -1,0 +1,134 @@
+import json
+from datetime import date, datetime, timedelta
+
+from atis.live.expiries import holidays_from_expiries, load_expiry_holidays, option_expiries
+from atis.live.feed import ReplayFeed, VirtualClock, completed
+from atis.live.runner import LiveConfig, LiveRunner, journal_summary
+from atis.live.telegram import ConsoleNotifier, TelegramNotifier, find_chat_ids
+from atis.playbook import path_session
+from atis.playbook.models import Bar
+
+from conftest import TODAY, balanced_prior
+
+A1_DAY = [("09:15", 24120), ("09:30", 24180), ("09:45", 24210), ("10:15", 24240), ("11:00", 24300)]
+
+
+def runner(tmp_path, bars, *, poll=60.0, notifier=None, holidays=frozenset()):
+    cfg = LiveConfig(symbols=("NIFTY",), state_dir=tmp_path, poll_seconds=poll)
+    clock = VirtualClock(datetime.combine(TODAY, cfg.times.open) - timedelta(minutes=5))
+    feed = ReplayFeed({"NIFTY": bars})
+    notifier = notifier or ConsoleNotifier(stream=open("/dev/null", "w"))
+    return LiveRunner(cfg, feed, notifier, clock, lambda s, d: ([balanced_prior()], frozenset()), holidays,
+                      log=lambda m: None), notifier
+
+
+def test_holidays_inferred_from_shifted_expiries():
+    exp = {"NIFTY": [date(2026, 10, 6), date(2026, 10, 19)], "BANKNIFTY": [date(2026, 11, 23)]}
+    assert holidays_from_expiries(exp) == {date(2026, 10, 20), date(2026, 11, 24)}
+    assert holidays_from_expiries({"X": [date(2026, 10, 2)]}) == {date(2026, 10, 5), date(2026, 10, 6)}
+
+
+def test_option_expiries_from_scrip_master_rows():
+    header = "SEM_EXM_EXCH_ID,SEM_INSTRUMENT_NAME,SEM_TRADING_SYMBOL,SEM_EXPIRY_DATE\n"
+    rows = ["NSE,OPTIDX,NIFTY-Oct2026-24000-CE,2026-10-19 14:30:00\n",
+            "NSE,OPTIDX,NIFTY-Oct2026-24000-PE,2026-10-19 14:30:00\n",
+            "NSE,FUTIDX,NIFTY-Oct2026-FUT,2026-10-27 14:30:00\n",
+            "NSE,OPTIDX,FINNIFTY-Oct2026-24000-CE,2026-10-27 14:30:00\n"]
+    assert option_expiries([header] + rows) == {"NIFTY": [date(2026, 10, 19)], "BANKNIFTY": []}
+
+
+def test_expiry_holidays_cache_and_fallback(tmp_path):
+    header = "SEM_EXM_EXCH_ID,SEM_INSTRUMENT_NAME,SEM_TRADING_SYMBOL,SEM_EXPIRY_DATE\n"
+    lines = [header, "NSE,OPTIDX,NIFTY-Oct2026-1-CE,2026-10-19 14:30:00\n"]
+    hol, src = load_expiry_holidays(tmp_path, date(2026, 10, 3), download=lambda: lines)
+    assert hol == {date(2026, 10, 20)} and src == "downloaded"
+
+    def boom():
+        raise OSError("offline")
+    hol2, src2 = load_expiry_holidays(tmp_path, date(2026, 10, 4), download=boom)
+    assert hol2 == hol and src2.startswith("stale cache")
+    hol3, src3 = load_expiry_holidays(tmp_path / "empty", date(2026, 10, 4), download=boom)
+    assert hol3 == frozenset() and src3.startswith("unavailable")
+
+
+def test_completed_drops_forming_candle_and_weights_spot():
+    t = datetime(2026, 10, 1, 9, 15)
+    bars = [Bar(t, 1, 2, 0, 1, 0), Bar(t + timedelta(minutes=1), 1, 2, 0, 1, 0)]
+    out = completed(bars, t + timedelta(minutes=1, seconds=30))
+    assert len(out) == 1 and out[0].volume == 1.0
+
+
+def test_telegram_send_and_errors(capsys):
+    calls = []
+
+    def post(url, payload):
+        calls.append((url, payload))
+        return {"ok": True}
+
+    n = TelegramNotifier("123:SECRET", "42", post=post)
+    assert n.send("<b>hi</b>" + "x" * 5000)
+    url, payload = calls[0]
+    assert url.endswith("/bot123:SECRET/sendMessage") and payload["chat_id"] == "42"
+    assert payload["parse_mode"] == "HTML" and len(payload["text"]) <= 4000
+
+    def fail(url, payload):
+        raise OSError(f"boom at {url}")
+
+    assert not TelegramNotifier("123:SECRET", "42", post=fail, retries=1).send("x")
+    err = capsys.readouterr().err
+    assert "send failed" in err and "SECRET" not in err
+
+
+def test_find_chat_ids():
+    res = {"ok": True, "result": [{"message": {"chat": {"id": 42, "first_name": "Vivek"}}},
+                                  {"message": {"chat": {"id": 42, "first_name": "Vivek"}}}]}
+    assert find_chat_ids("t", post=lambda u, p: res) == [("42", "Vivek")]
+
+
+def test_live_day_sends_plan_signal_and_summary(tmp_path):
+    r, n = runner(tmp_path, path_session(TODAY, A1_DAY).bars)
+    result = r.run_day(TODAY)
+    texts = n.sent
+    assert texts[0].startswith("<b>NIFTY plan") and "started" in texts[1]
+    signal = next(t for t in texts if "A1 LONG" in t)
+    assert "<b>Trade:</b> BUY" in signal and "exit by 15:10" in signal and "paper trade only" in signal
+    assert "day summary" in texts[-1] and "A1 long" in texts[-1]
+    report, outcomes = result["NIFTY"]
+    assert report is not None and outcomes[0].signal.setup_id == "A1"
+    rows = (tmp_path / "journal-live.jsonl").read_text().splitlines()
+    assert json.loads(rows[0])["setup"] == "A1"
+    assert "2 signals" in journal_summary(tmp_path / "journal-live.jsonl")
+
+
+def test_restart_does_not_resend(tmp_path):
+    bars = path_session(TODAY, A1_DAY).bars
+    r1, n1 = runner(tmp_path, bars)
+    r1.run_day(TODAY)
+    r2, n2 = runner(tmp_path, bars)
+    r2.run_day(TODAY)
+    assert sum("A1 LONG" in t for t in n1.sent) == 1
+    assert n2.sent == []  # plan, signal and summary were all delivered before the restart
+    keys = [json.loads(x)["key"] for x in (tmp_path / "journal-live.jsonl").read_text().splitlines()]
+    assert len(keys) == len(set(keys)) == 2  # A1 and A3, each journaled once
+
+
+def test_stale_feed_alert_and_recovery(tmp_path):
+    bars = path_session(TODAY, A1_DAY).bars
+    gap = [b for b in bars if not (datetime.combine(TODAY, datetime.min.time()).replace(hour=11) <= b.ts
+                                   < datetime.combine(TODAY, datetime.min.time()).replace(hour=11, minute=20))]
+    r, n = runner(tmp_path, gap)
+    r.run_day(TODAY)
+    stale = [t for t in n.sent if "no new data since" in t]
+    assert len(stale) == 1 and "11:00" in stale[0]
+    assert any("data resumed at 11:20" in t for t in n.sent)
+
+
+def test_no_data_stops_early_and_weekend_skips(tmp_path):
+    r, n = runner(tmp_path, [])
+    assert r.run_day(TODAY)["NIFTY"] == (None, [])
+    assert any("no market data by 09:45" in t for t in n.sent)
+    assert r.clock.now() < datetime.combine(TODAY, datetime.min.time()).replace(hour=10)
+    r2, n2 = runner(tmp_path, [])
+    assert r2.run_day(date(2026, 10, 3)) == {} and n2.sent == []
+    r3, n3 = runner(tmp_path, [], holidays=frozenset({TODAY}))
+    assert r3.run_day(TODAY) == {} and n3.sent == []

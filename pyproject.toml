@@ -16,6 +16,7 @@ dev = ["pytest>=8", "httpx>=0.27", "fastapi>=0.110", "uvicorn>=0.29"]
 [project.scripts]
 atis-playbook = "atis.playbook.cli:main"
 atis-console = "atis.console.__main__:main"
+atis-live = "atis.live.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
