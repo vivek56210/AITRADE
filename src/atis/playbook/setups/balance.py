@@ -75,9 +75,10 @@ def c3_multi_day_balance(st: SessionState, ev: BarEvent) -> Candidate | None:
     lo, hi = st.params.c3_nifty_sessions if st.spec.weekly_expiry else st.params.c3_banknifty_sessions
     hol = st.ctx.holidays
     expiry = nearest_expiry(st.spec, st.date, hol)
-    while sessions_until(st.date, expiry, hol) < lo:
+    wk = st.spec.trades_weekends
+    while sessions_until(st.date, expiry, hol, wk) < lo:
         expiry = nearest_expiry(st.spec, expiry + timedelta(days=1), hol)
-    if sessions_until(st.date, expiry, hol) > hi:
+    if sessions_until(st.date, expiry, hol, wk) > hi:
         st.skip("C3", f"no expiry {lo}-{hi} sessions out")
         return None
     if any(st.now <= e and e.date() <= expiry for e in st.ctx.events):

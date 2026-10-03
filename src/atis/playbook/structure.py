@@ -10,7 +10,7 @@ from .config import InstrumentSpec, PlaybookParams, SessionTimes
 from .models import Bar, DayType, IBClass, OpenLocation, OpenType, ProfileShape, Session
 from .profile import TPOProfile, ValueArea, VolumeProfile, to_row
 
-TPO_LETTERS = "ABCDEFGHIJKLMNOP"
+TPO_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"  # 52 periods: a 24-hour session in 30-min letters
 
 
 def session_start(d: date, times: SessionTimes) -> datetime:

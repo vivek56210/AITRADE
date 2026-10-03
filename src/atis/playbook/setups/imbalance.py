@@ -35,7 +35,7 @@ def a1_open_drive(st: SessionState, ev: BarEvent) -> Candidate | None:
         nodes = list(st.prior.hvns) + (list(st.balance.hvns) if st.balance else [])
         hvn = sorted((n for n in nodes if sgn * (n - t1) > st.row and sgn * (n - t2) < 0),
                      key=lambda n: sgn * (n - t1))
-        cands = [(t1, "~1x IB extension (re-anchor to IB at 10:15)"),
+        cands = [(t1, f"~1x IB extension (re-anchor to IB at {st.times.ib_end:%H:%M})"),
                  (hvn[0], "next HVN") if hvn else (t2, "~2x IB extension")]
         return Candidate(
             "A1", "Open Drive trend day", "A", direction_of(sgn), entry, st.open - sgn * st.row,

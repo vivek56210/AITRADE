@@ -65,7 +65,8 @@ class OptionPlanner:
 
     def is_early_series(self, d: date) -> bool:
         return (not self.spec.weekly_expiry and
-                sessions_until(d, nearest_expiry(self.spec, d, self.holidays), self.holidays)
+                sessions_until(d, nearest_expiry(self.spec, d, self.holidays), self.holidays,
+                               self.spec.trades_weekends)
                 >= self.params.early_series_sessions)
 
     def _leg(self, side: str, right: str, strike: float, expiry: date, spot: float,

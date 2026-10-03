@@ -109,7 +109,7 @@ class PlaybookEngine:
             migration=value_migration(h, p.migration_sessions),
             avg_ib=average_ib(h, p.ib_lookback) or 0.0, avg_range=average_range(h, p.ib_lookback),
             avg_va_width=average_va_width(h, p.ib_lookback),
-            is_expiry=nearest_expiry(self.spec, d, ctx.holidays) == d,
+            is_expiry=self.spec.expiry_day_rules and nearest_expiry(self.spec, d, ctx.holidays) == d,
         )
         self._st = st
         self._period: PeriodStat | None = None
@@ -162,7 +162,7 @@ class PlaybookEngine:
             self._day_type_check = st.developing_day_type()
             if self._day_type_check in (DayType.NEUTRAL, DayType.NEUTRAL_EXTREME):
                 self._directional_blocked = True
-                st.skip("*", "neutral structure by 11:30 - flat until K period (14:15-14:45) confirms")
+                st.skip("*", f"neutral structure by {self.times.day_type_check:%H:%M} - no directional trades today")
 
         ev = BarEvent(bar, st.now, period_closed, candle_closed)
         out: list[SetupSignal] = []
@@ -263,7 +263,7 @@ class PlaybookEngine:
         if short and self._short_premium_taken:
             return "premium-selling structure already taken today"
         if not short and self._directional_blocked:
-            return "neutral/unclear structure by 11:30 - no directional trades"
+            return f"neutral/unclear structure by {t.day_type_check:%H:%M} - no directional trades"
         opposed = next((s for s in self._live if s.direction.sign == -cand.direction.sign != 0), None)
         if opposed:
             return f"conflicts with live {opposed.setup_id} {opposed.direction.value} (its stop has not been hit)"
@@ -334,7 +334,7 @@ class PlaybookEngine:
                 f"Gap outside value rejected back through the open and inside {pr.low:g}-{pr.high:g} "
                 f"-> B1 toward POC {pr.poc:g}",
                 f"Open outside value, then two 30-min closes inside {pr.val:g}-{pr.vah:g} -> B2 to the opposite edge",
-                f"Open inside value -> wait for the IB (10:15); IB inside value and not narrow -> C1 condor "
+                f"Open inside value -> wait for the IB ({self.times.ib_end:%H:%M}); IB inside value and not narrow -> C1 condor "
                 f"beyond {pr.high:g}/{pr.low:g}",
                 "Narrow IB + 30-min close beyond it -> A3 (target 2x IB); extension fails back inside -> B3",
             ]
@@ -360,9 +360,10 @@ class PlaybookEngine:
         if st.is_expiry:
             warn.append("EXPIRY DAY: defined-risk only, shorts out by 14:30, only small A3 buys after 14:00, "
                         "flat by 15:05 before the closing auction")
-        if is_monthly_expiry_day(self.spec, st.date, hol):
+        if self.spec.expiry_day_rules and is_monthly_expiry_day(self.spec, st.date, hol):
             warn.append("monthly expiry: roll the futures profile to the next-month contract after today")
-        if not self.spec.weekly_expiry and sessions_until(st.date, expiry, hol) >= self.params.early_series_sessions:
+        if not self.spec.weekly_expiry and \
+                sessions_until(st.date, expiry, hol, self.spec.trades_weekends) >= self.params.early_series_sessions:
             warn.append("BANKNIFTY early series: favour directional setups with ITM options or debit spreads")
         for e in st.ctx.events:
             if e.date() == st.date:

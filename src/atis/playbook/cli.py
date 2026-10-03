@@ -1,16 +1,20 @@
-"""Command line: fetch index data, run the playbook over bars (CSV / Upstox / Dhan) or a synthetic demo."""
+"""Command line: fetch index data, run the playbook over bars (CSV / Upstox / Dhan), a synthetic demo,
+or the crypto backtest on Delta Exchange India perpetuals."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from . import crypto
 from .backtest import backtest
-from .config import INSTRUMENTS, PlaybookParams, RiskParams
+from .config import CRYPTO_INSTRUMENTS, INSTRUMENTS, PlaybookParams, RiskParams
 from .data import load_csv, prepare_sessions, synthetic_sessions, write_csv
+from .delta import DeltaError, fetch_perp_1m
 from .dhan import DhanError, Roll, availability, fetch_futures_1m, profile
 from .engine import PlaybookEngine
 from .report import format_backtest, format_plan, format_report, to_json
@@ -19,6 +23,7 @@ from .upstox import fetch_index_1m
 
 DEFAULT_CACHE = Path("data/upstox")
 DHAN_CACHE = Path("data/dhan")
+DELTA_CACHE = Path("data/delta")
 
 
 def _dates(raw: str | None) -> frozenset[date]:
@@ -77,6 +82,18 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--symbol", default="NIFTY", choices=sorted(INSTRUMENTS))
     d.add_argument("--cache", default=str(DHAN_CACHE))
 
+    c = sub.add_parser("crypto", help="backtest BTC/ETH perpetuals from Delta Exchange India (public data, no key)")
+    c.add_argument("--symbols", default="BTCUSD,ETHUSD", help=f"comma-separated: {', '.join(CRYPTO_INSTRUMENTS)}")
+    c.add_argument("--session", default="utc,ny,ist",
+                   help="comma-separated session definitions: " + "; ".join(f"{k} = {v.label}"
+                                                                         for k, v in crypto.SESSIONS.items()))
+    c.add_argument("--from", dest="start", required=True, type=date.fromisoformat)
+    c.add_argument("--to", dest="end", default=date.today(), type=date.fromisoformat)
+    c.add_argument("--cache", default=str(DELTA_CACHE))
+    c.add_argument("--warmup-days", type=int, default=10, help="days before --from used only to build history")
+    c.add_argument("--disable", help="comma-separated setup ids to switch off")
+    c.add_argument("--json", action="store_true")
+
     for name in ("run", "demo"):
         p = sub.add_parser(name)
         if name == "run":
@@ -112,10 +129,38 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        return _main(args)
+        return _crypto(args) if args.cmd == "crypto" else _main(args)
     except DhanError as exc:
         print(f"dhan: {exc}", file=sys.stderr)
         return 1
+    except DeltaError as exc:
+        print(f"delta: {exc}", file=sys.stderr)
+        return 1
+
+
+def _crypto(args: argparse.Namespace) -> int:
+    symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
+    keys = [x.strip().lower() for x in args.session.split(",") if x.strip()]
+    bad = [x for x in symbols if x not in CRYPTO_INSTRUMENTS] + [k for k in keys if k not in crypto.SESSIONS]
+    if bad:
+        print(f"unknown symbol/session: {', '.join(bad)}", file=sys.stderr)
+        return 2
+    disabled = [x.strip().upper() for x in (args.disable or "").split(",") if x.strip()]
+    out = []
+    for sym in symbols:
+        # one extra day either side so every local-time session is complete
+        bars = fetch_perp_1m(sym, args.start - timedelta(days=args.warmup_days + 1), args.end + timedelta(days=1),
+                             Path(args.cache), on_month=_progress(sym))
+        for key in keys:
+            sm = crypto.summarize(crypto.run(sym, crypto.SESSIONS[key], bars, args.start, args.end,
+                                             args.warmup_days, disabled))
+            out.append(sm)
+            if not args.json:
+                print(crypto.format_summary(sm), flush=True)
+                print()
+    if args.json:
+        print(json.dumps(out, indent=1))
+    return 0
 
 
 def _main(args: argparse.Namespace) -> int:

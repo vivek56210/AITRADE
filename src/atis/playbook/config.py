@@ -6,19 +6,23 @@ Every number here is a proposed default (P) from the volume-profile playbook
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import time
+from dataclasses import dataclass, fields, replace
+from datetime import datetime, time, timedelta
 
 
 @dataclass(frozen=True)
 class InstrumentSpec:
     symbol: str
-    lot_size: int
+    lot_size: float  # underlying units per lot / contract (NIFTY 65; Delta BTCUSD 0.001 BTC)
     strike_step: float
     row_size: float
     weekly_expiry: bool
     credit_wing_width: float
     expiry_weekday: int = 1  # Tuesday
+    trades_weekends: bool = False  # crypto: every calendar day is a session
+    daily_expiry: bool = False  # crypto options expire every day
+    expiry_day_rules: bool = True  # NSE expiry-day restrictions (gamma, closing auction); off for crypto
+    fee_per_side: float = 0.0  # exchange fee incl. tax as a fraction of notional, charged on entry and exit
 
 
 NIFTY = InstrumentSpec("NIFTY", lot_size=65, strike_step=50.0, row_size=5.0,
@@ -26,6 +30,17 @@ NIFTY = InstrumentSpec("NIFTY", lot_size=65, strike_step=50.0, row_size=5.0,
 BANKNIFTY = InstrumentSpec("BANKNIFTY", lot_size=30, strike_step=100.0, row_size=10.0,
                            weekly_expiry=False, credit_wing_width=400.0)
 INSTRUMENTS = {s.symbol: s for s in (NIFTY, BANKNIFTY)}
+
+# Delta Exchange India perpetuals (USD-quoted). Fee: 0.05% taker + 18% GST, assumed on both entry and exit.
+# Option strikes: dailies step 200 (BTC) / 20 (ETH); expiries daily, weekly and monthly on Friday.
+DELTA_TAKER_FEE = 0.0005 * 1.18
+BTCUSD = InstrumentSpec("BTCUSD", lot_size=0.001, strike_step=200.0, row_size=25.0, weekly_expiry=True,
+                        credit_wing_width=1000.0, expiry_weekday=4, trades_weekends=True, daily_expiry=True,
+                        expiry_day_rules=False, fee_per_side=DELTA_TAKER_FEE)
+ETHUSD = InstrumentSpec("ETHUSD", lot_size=0.01, strike_step=20.0, row_size=2.0, weekly_expiry=True,
+                        credit_wing_width=100.0, expiry_weekday=4, trades_weekends=True, daily_expiry=True,
+                        expiry_day_rules=False, fee_per_side=DELTA_TAKER_FEE)
+CRYPTO_INSTRUMENTS = {s.symbol: s for s in (BTCUSD, ETHUSD)}
 
 
 @dataclass(frozen=True)
@@ -48,6 +63,37 @@ class SessionTimes:
     expiry_flat_by: time = time(15, 5)
     pin_window_start: time = time(12, 0)
     pin_window_end: time = time(14, 0)
+
+    @property
+    def session_minutes(self) -> int:
+        return _minutes(self.close) - _minutes(self.open) + (1 if self.close.second else 0)
+
+
+def _minutes(t: time) -> int:
+    return t.hour * 60 + t.minute
+
+
+def scaled_session_times(open_: time, minutes: int, base: SessionTimes = SessionTimes()) -> SessionTimes:
+    """The NSE session clock moved to another open and stretched to another length.
+
+    The opening periods through the end of the IB keep their real durations (a 60-minute IB stays 60
+    minutes). Every later checkpoint keeps its relative position between the IB end and the close.
+    A session reaching midnight closes at 23:59:59, so it never spans two calendar dates.
+    """
+    b_open, b_ib = _minutes(base.open), _minutes(base.ib_end) - _minutes(base.open)
+    b_len = _minutes(base.close) - b_open
+    if not b_ib < minutes <= 24 * 60 - _minutes(open_):
+        raise ValueError(f"session of {minutes} min from {open_} must outlast the IB and end by midnight")
+    day0 = datetime.combine(datetime.min.date(), open_)
+
+    def move(t: time) -> time:
+        off = _minutes(t) - b_open
+        new = off if off <= b_ib else b_ib + (off - b_ib) * (minutes - b_ib) / (b_len - b_ib)
+        if new >= 24 * 60 - _minutes(open_):
+            return time(23, 59, 59)
+        return (day0 + timedelta(minutes=round(new))).time()
+
+    return replace(base, **{f.name: move(getattr(base, f.name)) for f in fields(base) if f.type in ("time", time)})
 
 
 @dataclass(frozen=True)

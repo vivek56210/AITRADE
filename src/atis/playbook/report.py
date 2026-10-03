@@ -85,7 +85,7 @@ def format_report(rep: SessionReport) -> str:
         f"--- {rep.symbol} {rep.date}: open {rep.open_type.value if rep.open_type else '-'} "
         f"({rep.open_location.value if rep.open_location else '-'}), "
         f"IB {rep.ib_low:g}-{rep.ib_high:g} {rep.ib_class.value if rep.ib_class else ''}, "
-        f"day type @11:30 {rep.day_type_at_check.value if rep.day_type_at_check else '-'}, "
+        f"day type at check {rep.day_type_at_check.value if rep.day_type_at_check else '-'}, "
         f"final {p.day_type.value} ({p.shape.value}-shape) VA {p.val:g}-{p.vah:g} POC {p.poc:g}"
         if rep.ib_high is not None else f"--- {rep.symbol} {rep.date}: session ended before the IB completed",
     ]
