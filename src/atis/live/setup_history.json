@@ -1,0 +1,169 @@
+{
+ "window": "2022-01-01 -> 2026-10-01",
+ "basis": "Upstox index spot backtest, R before costs",
+ "NIFTY": {
+  "A1": {
+   "trades": 66,
+   "wins": 32,
+   "total_r": 5.504,
+   "premium": 0,
+   "contained": 0
+  },
+  "A2": {
+   "trades": 325,
+   "wins": 154,
+   "total_r": -32.831,
+   "premium": 0,
+   "contained": 0
+  },
+  "A3": {
+   "trades": 614,
+   "wins": 353,
+   "total_r": 7.666,
+   "premium": 0,
+   "contained": 0
+  },
+  "A4": {
+   "trades": 30,
+   "wins": 17,
+   "total_r": 0.854,
+   "premium": 0,
+   "contained": 0
+  },
+  "A5": {
+   "trades": 15,
+   "wins": 9,
+   "total_r": -0.827,
+   "premium": 0,
+   "contained": 0
+  },
+  "B1": {
+   "trades": 202,
+   "wins": 132,
+   "total_r": -5.759,
+   "premium": 0,
+   "contained": 0
+  },
+  "B2": {
+   "trades": 140,
+   "wins": 87,
+   "total_r": 3.823,
+   "premium": 0,
+   "contained": 0
+  },
+  "B3": {
+   "trades": 315,
+   "wins": 154,
+   "total_r": 6.685,
+   "premium": 0,
+   "contained": 0
+  },
+  "B4": {
+   "trades": 48,
+   "wins": 25,
+   "total_r": 20.948,
+   "premium": 0,
+   "contained": 0
+  },
+  "C1": {
+   "trades": 0,
+   "wins": 0,
+   "total_r": 0.0,
+   "premium": 44,
+   "contained": 36
+  },
+  "C2": {
+   "trades": 0,
+   "wins": 0,
+   "total_r": 0.0,
+   "premium": 89,
+   "contained": 41
+  }
+ },
+ "BANKNIFTY": {
+  "A1": {
+   "trades": 49,
+   "wins": 23,
+   "total_r": 1.292,
+   "premium": 0,
+   "contained": 0
+  },
+  "A2": {
+   "trades": 363,
+   "wins": 188,
+   "total_r": 17.044,
+   "premium": 0,
+   "contained": 0
+  },
+  "A3": {
+   "trades": 569,
+   "wins": 319,
+   "total_r": -52.622,
+   "premium": 0,
+   "contained": 0
+  },
+  "A4": {
+   "trades": 34,
+   "wins": 19,
+   "total_r": 4.384,
+   "premium": 0,
+   "contained": 0
+  },
+  "A5": {
+   "trades": 14,
+   "wins": 7,
+   "total_r": -0.575,
+   "premium": 0,
+   "contained": 0
+  },
+  "B1": {
+   "trades": 237,
+   "wins": 150,
+   "total_r": -12.797,
+   "premium": 0,
+   "contained": 0
+  },
+  "B2": {
+   "trades": 143,
+   "wins": 77,
+   "total_r": -25.197,
+   "premium": 0,
+   "contained": 0
+  },
+  "B3": {
+   "trades": 280,
+   "wins": 156,
+   "total_r": 26.352,
+   "premium": 0,
+   "contained": 0
+  },
+  "B4": {
+   "trades": 36,
+   "wins": 18,
+   "total_r": 1.472,
+   "premium": 0,
+   "contained": 0
+  },
+  "C1": {
+   "trades": 0,
+   "wins": 0,
+   "total_r": 0.0,
+   "premium": 48,
+   "contained": 30
+  },
+  "C2": {
+   "trades": 0,
+   "wins": 0,
+   "total_r": 0.0,
+   "premium": 101,
+   "contained": 42
+  },
+  "C3": {
+   "trades": 0,
+   "wins": 0,
+   "total_r": 0.0,
+   "premium": 1,
+   "contained": 1
+  }
+ }
+}

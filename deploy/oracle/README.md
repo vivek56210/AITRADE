@@ -117,10 +117,10 @@ empty until Monday's session starts.
 |---|---|
 | 08:55 | The runner starts; the VM may sleep until 09:05 |
 | ~09:05 | Telegram: a plan for NIFTY and BANKNIFTY, then "ATIS live started" |
-| 09:15–15:30 | Telegram: each setup as it fires (entry, stop, targets, option legs, lots), with its **grade (A+ / B)** and the reasons, marked *paper trade only*. C-grade signals are journaled but not sent. The Live alerts page refreshes every 15 s |
+| 09:15–15:30 | Telegram: each setup as it fires, marked *paper trade only*. It shows the option to buy or sell at its **live premium**, the premium stop loss, target 1 and target 2, **risk:reward**, lots, the index levels behind it, **why**, and a **confidence** level (HIGH / MEDIUM / LOW) with the setup's track record. C-grade signals are journaled but not sent. The Live alerts page refreshes every 15 s |
 | A loss limit is hit | Telegram, once: the daily (−3R) or weekly (−6R) loss limit is reached. No new alerts until it resets |
 | If the feed stalls | Telegram: "no new data since …", then "data resumed" |
-| 15:31 | Telegram: day summary with the paper result per signal. It's also added to the journal on the Live alerts page |
+| 15:31 | Telegram: day summary with the result per signal in R and the **option P&L in ₹** from real premiums (before brokerage and taxes). It's also added to the journal on the Live alerts page |
 
 The runner skips weekends and NSE holidays by itself. Holidays are read from the exchange's
 option expiry calendar. If it crashes, systemd restarts it within a minute, and it does not resend

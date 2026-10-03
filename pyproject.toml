@@ -25,6 +25,7 @@ include = ["atis*"]
 
 [tool.setuptools.package-data]
 "atis.console" = ["static/*", "static/assets/*"]
+"atis.live" = ["setup_history.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

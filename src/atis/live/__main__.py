@@ -22,6 +22,7 @@ from ..playbook.data import prepare_sessions
 from ..playbook.upstox import fetch_index_1m
 from .expiries import load_expiry_holidays
 from .feed import ReplayFeed, SystemClock, UpstoxIntradayFeed, VirtualClock
+from .optionquotes import OptionChain, OptionDesk, OptionPrices
 from .runner import LiveConfig, LiveRunner, journal_summary, log_stderr
 from .telegram import TelegramError, find_chat_ids, notifier_from_env
 
@@ -118,8 +119,9 @@ def main(argv: list[str] | None = None) -> int:
             holidays, source = load_expiry_holidays(Path(args.state_dir), today)
             log_stderr(f"expiry calendar: {source}; holidays inferred from expiries: "
                        f"{', '.join(map(str, sorted(holidays))) or 'none'}")
-            runner = LiveRunner(_config(args, "live"), UpstoxIntradayFeed(), notifier, clock, history,
-                                holidays, log_stderr)
+            cfg = _config(args, "live")
+            desk = OptionDesk(lambda: OptionChain.load(Path(args.state_dir), today), OptionPrices(), cfg.risk, log_stderr)
+            runner = LiveRunner(cfg, UpstoxIntradayFeed(), notifier, clock, history, holidays, log_stderr, desk)
             if not runner.is_trading_day(today):
                 log_stderr(f"{today} is not a trading day - nothing to do")
                 return 0
@@ -138,7 +140,9 @@ def main(argv: list[str] | None = None) -> int:
             clock = VirtualClock(datetime.combine(day, cfg.times.open) - timedelta(minutes=5))
             cfg.poll_seconds = 60.0
             holidays, _ = load_expiry_holidays(Path(args.state_dir), day)
-            runner = LiveRunner(cfg, ReplayFeed(bars), notifier, clock, history, holidays, log_stderr)
+            desk = OptionDesk(lambda: OptionChain.load(Path(args.state_dir), date.today()),
+                              OptionPrices(historical=True), cfg.risk, log_stderr)
+            runner = LiveRunner(cfg, ReplayFeed(bars), notifier, clock, history, holidays, log_stderr, desk)
             runner.state_path(day).unlink(missing_ok=True)
             runner.run_day(day)
         return 0

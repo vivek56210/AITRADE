@@ -99,6 +99,12 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--disable", help="comma-separated setup ids to switch off")
     c.add_argument("--json", action="store_true")
 
+    st = sub.add_parser("setup-stats", help="per-setup track record from an Upstox spot backtest (for alert confidence)")
+    st.add_argument("--from", dest="start", default=date(2022, 1, 1), type=date.fromisoformat)
+    st.add_argument("--to", dest="end", default=date.today(), type=date.fromisoformat)
+    st.add_argument("--out", default="src/atis/live/setup_history.json")
+    st.add_argument("--cache", default=str(DEFAULT_CACHE))
+
     for name in ("run", "demo"):
         p = sub.add_parser(name)
         if name == "run":
@@ -134,6 +140,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.cmd == "setup-stats":
+            return _setup_stats(args)
         return _crypto(args) if args.cmd == "crypto" else _main(args)
     except DhanError as exc:
         print(f"dhan: {exc}", file=sys.stderr)
@@ -141,6 +149,29 @@ def main(argv: list[str] | None = None) -> int:
     except DeltaError as exc:
         print(f"delta: {exc}", file=sys.stderr)
         return 1
+
+
+def _setup_stats(args: argparse.Namespace) -> int:
+    out: dict = {"window": f"{args.start} -> {args.end}", "basis": "Upstox index spot backtest, R before costs"}
+    for sym, spec in INSTRUMENTS.items():
+        sessions, holidays = prepare_sessions(fetch_index_1m(sym, args.start, args.end, Path(args.cache),
+                                                             on_month=_progress(sym)))
+        ctx = DayContext(holidays=holidays)
+        res = backtest(sessions, spec, PlaybookEngine(spec), {s.date: ctx for s in sessions}, warmup=3)
+        per: dict[str, dict] = {}
+        for o in res.outcomes:
+            d = per.setdefault(o.signal.setup_id, {"trades": 0, "wins": 0, "total_r": 0.0, "premium": 0, "contained": 0})
+            if o.r_multiple is not None:
+                d["trades"] += 1
+                d["wins"] += o.r_multiple > 0
+                d["total_r"] = round(d["total_r"] + o.r_multiple, 3)
+            if o.contained is not None:
+                d["premium"] += 1
+                d["contained"] += bool(o.contained)
+        out[sym] = dict(sorted(per.items()))
+    Path(args.out).write_text(json.dumps(out, indent=1) + "\n")
+    print(f"wrote {args.out}")
+    return 0
 
 
 def _crypto(args: argparse.Namespace) -> int:

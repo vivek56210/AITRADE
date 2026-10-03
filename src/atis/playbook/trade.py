@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from .models import Bar, SetupSignal
 
@@ -27,6 +27,8 @@ class TradeState:
     reason: str = ""
     trail_bars: int = 0  # >0: after the first target, trail the stop over the last N bars' extreme
     recent: deque = field(default_factory=deque)
+    fills: list = field(default_factory=list)  # (exit time, fraction of the position, index price)
+    last_end: datetime | None = None
 
     def __post_init__(self) -> None:
         self.stop = self.sig.stop
@@ -59,17 +61,21 @@ class TradeState:
             return self.finish()
         sgn = sig.direction.sign
         adverse = b.low if sgn > 0 else b.high
+        end = b.ts + timedelta(minutes=1)
         if sgn * (adverse - self.stop) <= 0:
+            self.fills.append((end, self.remaining, self.stop))
             self.realized += self.remaining * sgn * (self.stop - sig.entry)
             return self._close("stop" if self.stop == sig.stop else "breakeven" if self.stop == sig.entry else "trailing stop")
         favourable = b.high if sgn > 0 else b.low
         while self.targets and sgn * (favourable - self.targets[0].price) >= 0:
             t = self.targets.pop(0)
             part = min(self.remaining, t.size_pct / 100.0)
+            self.fills.append((end, part, t.price))
             self.realized += part * sgn * (t.price - sig.entry)
             self.remaining -= part
             self.stop = sig.entry
         self.last_close = b.close
+        self.last_end = end
         if self.remaining <= 1e-9:
             return self._close("targets")
         if self.trail_bars:
@@ -85,6 +91,8 @@ class TradeState:
         if self.closed:
             return True
         last = self.last_close if self.last_close is not None else self.sig.entry
+        if self.remaining > 1e-9:
+            self.fills.append((self.last_end or self.sig.ts, self.remaining, last))
         self.realized += self.remaining * self.sig.direction.sign * (last - self.sig.entry)
         return self._close("time exit")
 

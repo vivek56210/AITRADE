@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from .config import InstrumentSpec
 from .engine import PlaybookEngine, SessionReport
@@ -26,6 +26,7 @@ class TradeOutcome:
     r_multiple: float | None = None
     contained: bool | None = None
     exit_reason: str = ""
+    exits: list = field(default_factory=list)  # (time, fraction of the position) - for option P&L
     cost_r: float = 0.0  # round-trip exchange fee in R (0 when the spec has no fee)
 
     @property
@@ -135,7 +136,7 @@ def simulate_directional(sig: SetupSignal, bars: list[Bar], trail_bars: int = 0)
         if trade.update(b):
             break
     trade.finish()
-    return TradeOutcome(sig, trade.r, None, trade.reason)
+    return TradeOutcome(sig, trade.r, None, trade.reason, [(t, f) for t, f, _ in trade.fills])
 
 
 def simulate_premium(sig: SetupSignal, bars: list[Bar], basis: float = 0.0) -> TradeOutcome:
@@ -144,11 +145,13 @@ def simulate_premium(sig: SetupSignal, bars: list[Bar], basis: float = 0.0) -> T
     lower = max((l.strike for l in shorts if l.right == "PE"), default=None)
     live = [b for b in bars if b.ts >= sig.ts and (sig.exit_by is None or b.ts < sig.exit_by)]
     for b in live:
+        end = [(b.ts + timedelta(minutes=1), 1.0)]
         if upper is not None and b.high - basis >= upper:
-            return TradeOutcome(sig, None, False, "call side breached")
+            return TradeOutcome(sig, None, False, "call side breached", end)
         if lower is not None and b.low - basis <= lower:
-            return TradeOutcome(sig, None, False, "put side breached")
-    return TradeOutcome(sig, None, True, "contained to exit" if sig.horizon == "intraday" else "contained to session end")
+            return TradeOutcome(sig, None, False, "put side breached", end)
+    last = [(live[-1].ts + timedelta(minutes=1), 1.0)] if live else []
+    return TradeOutcome(sig, None, True, "contained to exit" if sig.horizon == "intraday" else "contained to session end", last)
 
 
 def backtest(sessions: Iterable[Session], spec: InstrumentSpec, engine: PlaybookEngine | None = None,

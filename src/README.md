@@ -389,6 +389,26 @@ The runner skips weekends and holidays. Holidays are inferred from shifted optio
 exchange scrip master. The runner warns on a stale feed, survives restarts without resending, and
 writes a snapshot, a heartbeat and a journal to `data/live` for the console's Live alerts page.
 
+**What an alert contains** (`live/messages.py`, `live/optionquotes.py`):
+
+- **What to trade, in option terms.** Each leg's real premium at the signal minute comes from
+  Upstox's public instrument list and 1-minute option candles.
+- **Option stop and targets.** Each leg's implied volatility is backed out from its live premium,
+  and the position is repriced at the index stop and targets. The stop is never looser than 35% of
+  the premium. Condors use the playbook rules: the stop is a buy-back at double the credit, and the
+  targets are 50% and 70% of the credit.
+- **Risk:reward** for each target.
+- **Lots** sized from the real premium risk.
+- **The index levels behind the trade.**
+- **Why**: the setup's context and trigger.
+- **Confidence: HIGH / MEDIUM / LOW**, combining the signal grade with that setup's 2022–26
+  index-backtest track record (`setup_history.json`, regenerated with `atis-playbook setup-stats`):
+  - HIGH: grade A+ and history of at least +0.03R per trade (condors: held 70% or more).
+  - LOW: grade C, or history of −0.03R or worse (condors: held under 50%).
+  - This is not a win probability.
+- **Day summary.** Option P&L in rupees from the real premiums at each exit minute, before
+  brokerage and taxes. If option prices can't be fetched, the alert falls back to index levels only.
+
 ### Recording NSE order flow (Dhan live feed)
 
 Historical NSE ticks with the aggressor side are not available to retail traders, so `atis-live

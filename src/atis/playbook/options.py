@@ -30,6 +30,23 @@ def bs_price_delta(spot: float, strike: float, years: float, iv: float, rate: fl
     return strike * disc * _norm_cdf(-d2) - spot * _norm_cdf(-d1), _norm_cdf(d1) - 1.0
 
 
+def implied_vol(price: float, spot: float, strike: float, years: float, rate: float, right: str,
+                lo: float = 0.01, hi: float = 3.0) -> float | None:
+    """Black-Scholes implied volatility by bisection; None when the price is outside the model's range."""
+    if years <= 0 or price <= 0:
+        return None
+    p_lo, p_hi = bs_price_delta(spot, strike, years, lo, rate, right)[0], bs_price_delta(spot, strike, years, hi, rate, right)[0]
+    if not p_lo <= price <= p_hi:
+        return None
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        if bs_price_delta(spot, strike, years, mid, rate, right)[0] < price:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
 def strike_above(level: float, step: float) -> float:
     """Nearest strike strictly above a level."""
     k = math.ceil(level / step) * step

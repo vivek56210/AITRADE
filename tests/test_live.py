@@ -90,8 +90,10 @@ def test_live_day_sends_plan_signal_and_summary(tmp_path):
     result = r.run_day(TODAY)
     texts = n.sent
     assert texts[0].startswith("<b>NIFTY plan") and "started" in texts[1]
-    signal = next(t for t in texts if "A1 LONG" in t)
-    assert "<b>Trade:</b> BUY" in signal and "exit by 15:10" in signal and "paper trade only" in signal
+    signal = next(t for t in texts if "A1 Open Drive" in t)
+    assert "BUY" in signal and "Entry 24" in signal and "Risk:Reward" in signal and "exit by 15:10" in signal
+    assert "<b>Why:</b>" in signal and "Confidence: <b>" in signal and "Track record" in signal
+    assert "paper trade only" in signal
     assert "day summary" in texts[-1] and "A1 long" in texts[-1]
     report, outcomes = result["NIFTY"]
     assert report is not None and outcomes[0].signal.setup_id == "A1"
@@ -106,7 +108,7 @@ def test_restart_does_not_resend(tmp_path):
     r1.run_day(TODAY)
     r2, n2 = runner(tmp_path, bars)
     r2.run_day(TODAY)
-    assert sum("A1 LONG" in t for t in n1.sent) == 1
+    assert sum("A1 Open Drive" in t for t in n1.sent) == 1
     assert n2.sent == []  # plan, signal and summary were all delivered before the restart
     keys = [json.loads(x)["key"] for x in (tmp_path / "journal-live.jsonl").read_text().splitlines()]
     assert len(keys) == len(set(keys)) == 2  # A1 and A3, each journaled once
@@ -200,7 +202,7 @@ def test_loss_limit_seeded_from_journal_and_announced_once(tmp_path):
     r, n = runner(tmp_path, path_session(TODAY, A1_DAY).bars)
     r.run_day(TODAY)
     assert r.ledger.week(TODAY) == -6.0
-    assert not any("A1 LONG" in t for t in n.sent)
+    assert not any("A1 Open Drive" in t for t in n.sent)
     assert sum("weekly loss limit" in t for t in n.sent) == 1
 
 
@@ -211,8 +213,8 @@ def test_signal_message_shows_grade_and_low_grades_are_held(tmp_path):
     _, outcomes = r.run_day(TODAY)["NIFTY"]
     held = set(json.loads(r.state_path(TODAY).read_text())["held"])
     assert held == {signal_key(o.signal) for o in outcomes if o.signal.grade != "A+"}
-    alerts = [t for t in n.sent if "<b>Grade " in t]
+    alerts = [t for t in n.sent if "Track record" in t]
     assert len(alerts) == sum(o.signal.grade == "A+" for o in outcomes)
-    assert all("Grade A+" in t for t in alerts)
+    assert all("grade A+" in t for t in alerts)
     rows = [json.loads(x) for x in (tmp_path / "journal-live.jsonl").read_text().splitlines()]
     assert len(rows) == len(outcomes) and all(row["grade"] in ("A+", "B", "C") for row in rows)

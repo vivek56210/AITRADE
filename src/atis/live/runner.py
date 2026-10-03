@@ -23,6 +23,7 @@ from ..playbook.state import DayContext
 from ..playbook.trade import RiskLedger
 from ..console.views import histogram, live_today, session_payload
 from .messages import eod_message, plan_message, signal_message
+from .optionquotes import OptionDesk, quote_json
 from .telegram import esc
 
 HistoryLoader = Callable[[str, date], tuple[list[Session], frozenset[date]]]
@@ -60,10 +61,12 @@ def signal_key(sig: SetupSignal) -> str:
 
 class LiveRunner:
     def __init__(self, cfg: LiveConfig, feed, notifier, clock, history: HistoryLoader,
-                 extra_holidays: frozenset[date] = frozenset(), log=print):
+                 extra_holidays: frozenset[date] = frozenset(), log=print, options: OptionDesk | None = None):
         self.cfg, self.feed, self.notifier, self.clock = cfg, feed, notifier, clock
         self.history, self.extra_holidays, self.log = history, extra_holidays, log
         self.ledger = RiskLedger()
+        self.options = options
+        self.quotes: dict[str, object] = {}
 
     # ---- state -----------------------------------------------------------------------------
 
@@ -185,6 +188,8 @@ class LiveRunner:
             book.bars.append(bar)
             for sig in book.engine.on_bar(bar):
                 key = signal_key(sig)
+                if key not in self.quotes:
+                    self.quotes[key] = self.options.quote(sig, now) if self.options else None
                 if key in state["sent"] or key in state.setdefault("held", []):
                     continue
                 if not at_least(sig.grade, self.cfg.min_grade):
@@ -192,7 +197,7 @@ class LiveRunner:
                     self._save_state(day, state)
                     self.log(f"signal {key} graded {sig.grade} - journaled, not alerted")
                     continue
-                text = signal_message(sig)
+                text = signal_message(sig, self.quotes.get(key))
                 if now - sig.ts > timedelta(minutes=3):
                     text = f"<b>LATE ({now - sig.ts} after the signal, e.g. after a restart)</b>\n{text}"
                 if self.notifier.send(text):
@@ -255,18 +260,25 @@ class LiveRunner:
                 out = (simulate_premium(sig, book.bars) if sig.option_plan.structure.is_short_premium
                        else simulate_directional(sig, book.bars, self.cfg.params.trail_bars))
                 outcomes.append(out)
-            self._journal(day, report, outcomes)
-        self._once(day, state, f"eod:{book.symbol}", eod_message(book.symbol, day, report, outcomes))
+        now = self.clock.now()
+        pnls = {i: self.options.pnl(self.quotes.get(signal_key(o.signal)), o.exits, day, now)
+                for i, o in enumerate(outcomes)} if self.options else {}
+        if report:
+            self._journal(day, report, outcomes, pnls)
+        one_lot = {i for i, o in enumerate(outcomes)
+                   if (q := self.quotes.get(signal_key(o.signal))) is not None and q.lots == 0}
+        self._once(day, state, f"eod:{book.symbol}", eod_message(book.symbol, day, report, outcomes, pnls, one_lot))
         return report, outcomes
 
-    def _journal(self, day: date, report: SessionReport, outcomes: list[TradeOutcome]) -> None:
+    def _journal(self, day: date, report: SessionReport, outcomes: list[TradeOutcome],
+                 pnls: dict[int, float | None] | None = None) -> None:
         self.cfg.state_dir.mkdir(parents=True, exist_ok=True)
         path = self.journal_path()
         done = set()
         if path.exists():
             done = {json.loads(ln)["key"] for ln in path.read_text().splitlines() if ln.strip()}
         with open(path, "a") as f:
-            for o in outcomes:
+            for i, o in enumerate(outcomes):
                 key = signal_key(o.signal)
                 if key in done:
                     continue
@@ -277,6 +289,7 @@ class LiveRunner:
                     "structure": s.option_plan.structure.value, "lots": s.lots, "r": o.r_multiple,
                     "contained": o.contained, "exit": o.exit_reason, "size": s.size_multiplier,
                     "grade": s.grade, "score": s.score,
+                    "option": quote_json(self.quotes.get(key)), "pnl_rs": (pnls or {}).get(i),
                     "legs": to_jsonable(s.option_plan.legs),
                 }) + "\n")
 
