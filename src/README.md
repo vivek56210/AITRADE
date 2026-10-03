@@ -263,6 +263,52 @@ For UI development run `atis-console` and `npm run dev` in `console-ui/` (Vite p
 The console binds to 127.0.0.1 and has no login, so do not expose it on a network directly; the
 Oracle setup below puts HTTPS and a password in front of it.
 
+### Crypto backtest (Delta Exchange India BTC/ETH perpetuals)
+
+```bash
+atis-playbook crypto --from 2024-10-01 --to 2026-09-30                 # BTCUSD + ETHUSD, all session definitions
+atis-playbook crypto --symbols ETHUSD --session ny --from 2025-01-01   # one coin, one session
+```
+
+How the backtest is set up:
+
+- **Data.** 1-minute candles with real traded volume come from Delta's public API (no key needed)
+  and are cached per month in `data/delta`.
+- **Sessions.** Crypto never closes, so "the session" is a choice. Three are tested, each with the
+  playbook's NSE clock scaled to fit (`scaled_session_times`; the IB stays one hour):
+  - `utc`: a 24-hour day from 00:00 UTC
+  - `ny`: US cash hours, 09:30–15:45 New York
+  - `ist`: 09:15–15:30 IST, the same hours as NSE
+- **Fees.** Each directional trade pays Delta's taker fee on entry and exit, 0.05% + 18% GST per
+  side, converted to R. A second scenario uses limit entries (maker fee 0.02%).
+- **Calendar.** Every calendar day is a session. NSE expiry-day rules are off.
+
+Results, 2024-10-01 → 2026-09-30, two years, on the perpetual (not option P&L), before funding
+and slippage:
+
+| | Trades | Gross R/trade | Fee R/trade | Net R | Net R, limit entries | Condors contained |
+|---|---|---|---|---|---|---|
+| BTC utc | 1,322 | −0.024 | 0.51 | −711 | −507 | 45/211 |
+| BTC ny | 971 | −0.014 | 0.37 | −372 | −265 | 33/112 |
+| BTC ist | 969 | +0.002 | 0.68 | −656 | −459 | 33/102 |
+| ETH utc | 1,301 | +0.038 | 0.33 | −383 | −253 | 55/245 |
+| ETH ny | 1,005 | −0.002 | 0.25 | −252 | −177 | 52/115 |
+| ETH ist | 947 | −0.031 | 0.43 | −440 | −317 | 32/101 |
+
+What the results show:
+
+- **No gross edge.** Before fees, every configuration averages between −0.03R and +0.04R per trade,
+  which is noise. On NSE spot the same engine made +0.08R per trade on BANKNIFTY and +0.02R on
+  NIFTY over its one-year run, also before costs.
+- **Fees dominate.** The playbook's 1-minute structural stops are tight relative to price
+  (0.2–0.6%). Delta's round-trip fee of about 0.12% of notional therefore costs 0.25–0.68R per
+  trade. Every setup is negative after fees in at least one configuration.
+- **No setup survives everywhere.** ETH `ny` A1 is +15.5R net over 41 trades and positive in both
+  years, but this run covers about 54 setup × configuration combinations, so a couple of positive
+  ones are expected by chance.
+- **Conclusion.** The NSE playbook does not carry over to crypto as-is. Crypto alerts are not wired
+  into `atis-live`.
+
 ### Live Telegram alerts (paper trading)
 
 `atis-live` runs the same engine on today's 1-minute NIFTY/BANKNIFTY index candles. It uses the

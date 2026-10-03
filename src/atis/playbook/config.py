@@ -37,7 +37,7 @@ DELTA_TAKER_FEE = 0.0005 * 1.18
 BTCUSD = InstrumentSpec("BTCUSD", lot_size=0.001, strike_step=200.0, row_size=25.0, weekly_expiry=True,
                         credit_wing_width=1000.0, expiry_weekday=4, trades_weekends=True, daily_expiry=True,
                         expiry_day_rules=False, fee_per_side=DELTA_TAKER_FEE)
-ETHUSD = InstrumentSpec("ETHUSD", lot_size=0.01, strike_step=20.0, row_size=2.0, weekly_expiry=True,
+ETHUSD = InstrumentSpec("ETHUSD", lot_size=0.01, strike_step=20.0, row_size=1.0, weekly_expiry=True,
                         credit_wing_width=100.0, expiry_weekday=4, trades_weekends=True, daily_expiry=True,
                         expiry_day_rules=False, fee_per_side=DELTA_TAKER_FEE)
 CRYPTO_INSTRUMENTS = {s.symbol: s for s in (BTCUSD, ETHUSD)}
