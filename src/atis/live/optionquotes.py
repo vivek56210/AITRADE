@@ -182,7 +182,8 @@ def quote_signal(sig: SetupSignal, chain: OptionChain, prices: OptionPrices, now
         floor = net * (1 - risk.premium_stop_pct)
         q.stop = round(max(at_stop, floor) if at_stop is not None else floor, 2)
         q.targets = [round(v, 2) for v in (q.value(t.price) for t in sig.targets) if v is not None]
-        q.risk_per_lot = round((net - q.stop) * lot_size, 2)
+        # a spread's premium barely moves before its stop, so size it by what it can really lose: the debit
+        q.risk_per_lot = round((net if len(legs) > 1 else net - q.stop) * lot_size, 2)
     q.lots = int(budget // q.risk_per_lot) if q.risk_per_lot and q.risk_per_lot > 0 else 0
     return q
 

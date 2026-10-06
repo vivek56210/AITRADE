@@ -122,3 +122,18 @@ def test_message_with_and_without_option_prices():
         assert part in text, part
     plain = signal_message(sig, None, {})
     assert "premium not available" in plain and "Risk:Reward T1 1:" in plain and "OPTION - what" not in plain
+
+
+def test_debit_spread_is_sized_by_its_full_debit():
+    from dataclasses import replace
+
+    from atis.playbook.models import OptionLeg, Structure
+    sig, _ = a1_signal()
+    long_leg = sig.option_plan.legs[0]
+    short_leg = OptionLeg("SELL", long_leg.right, long_leg.strike + 100, long_leg.expiry)
+    sig.option_plan = replace(sig.option_plan, structure=Structure.DEBIT_SPREAD, legs=(long_leg, short_leg))
+    prices, _ = fake_prices()
+    q = quote_signal(sig, OptionChain.from_rows(master_rows()), prices, datetime(2026, 10, 1, 16, 0))
+    assert len(q.legs) == 2 and q.entry > 0
+    assert q.risk_per_lot == pytest.approx(q.entry * 65, abs=0.01)  # full debit, not the narrow premium stop
+    assert q.lots == int(5000 // q.risk_per_lot)
