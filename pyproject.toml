@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atis"
+version = "0.1.0"
+description = "ATIS - market/volume-profile playbook for NIFTY and BANKNIFTY index options"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+console = ["fastapi>=0.110", "uvicorn>=0.29"]
+record = ["websockets>=12"]
+dev = ["pytest>=8", "httpx>=0.27", "fastapi>=0.110", "uvicorn>=0.29", "websockets>=12"]
+
+[project.scripts]
+atis-playbook = "atis.playbook.cli:main"
+atis-console = "atis.console.__main__:main"
+atis-live = "atis.live.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["atis*"]
+
+[tool.setuptools.package-data]
+"atis.console" = ["static/*", "static/assets/*"]
+"atis.live" = ["setup_history.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
