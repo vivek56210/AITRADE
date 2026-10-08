@@ -39,6 +39,12 @@ class SystemClock:
     def sleep(self, seconds: float) -> None:
         _time.sleep(seconds)
 
+    def sleep_until(self, target: datetime) -> None:
+        """Wait in short steps against the wall clock: a laptop that sleeps pauses a single long
+        time.sleep() on Windows, which would make the runner wake hours late."""
+        while (left := (target - self.now()).total_seconds()) > 0:
+            self.sleep(min(left, 30.0))
+
 
 @dataclass
 class VirtualClock:
@@ -51,6 +57,9 @@ class VirtualClock:
 
     def sleep(self, seconds: float) -> None:
         self.current += timedelta(seconds=seconds)
+
+    def sleep_until(self, target: datetime) -> None:
+        self.current = max(self.current, target)
 
 
 @dataclass

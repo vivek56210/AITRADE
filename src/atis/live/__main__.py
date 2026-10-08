@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             open_at = datetime.combine(today, runner.cfg.times.open) - timedelta(minutes=10)
             if clock.now() < open_at:
                 log_stderr(f"waiting until {open_at:%H:%M} to start")
-                clock.sleep((open_at - clock.now()).total_seconds())
+                clock.sleep_until(open_at)
             runner.run_day(today)
         else:
             day = args.date

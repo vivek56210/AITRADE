@@ -218,3 +218,20 @@ def test_signal_message_shows_grade_and_low_grades_are_held(tmp_path):
     assert all("grade A+" in t for t in alerts)
     rows = [json.loads(x) for x in (tmp_path / "journal-live.jsonl").read_text().splitlines()]
     assert len(rows) == len(outcomes) and all(row["grade"] in ("A+", "B", "C") for row in rows)
+
+
+def test_system_clock_waits_in_short_steps_against_the_wall_clock():
+    from atis.live.feed import SystemClock
+    t = [datetime(2026, 10, 8, 5, 0)]
+    naps = []
+
+    class Clock(SystemClock):
+        def now(self):
+            return t[0]
+
+        def sleep(self, s):
+            naps.append(s)
+            t[0] += timedelta(seconds=s) if len(naps) != 2 else timedelta(hours=3)  # the laptop slept 3 h
+
+    Clock().sleep_until(datetime(2026, 10, 8, 9, 5))
+    assert max(naps) <= 30 and t[0] >= datetime(2026, 10, 8, 9, 5) and len(naps) < 1000
