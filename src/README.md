@@ -280,6 +280,43 @@ The pre-market plan and Telegram plan also show the prior-week value area and na
 A+ does not beat B out of sample. C is negative in all four samples, so `atis-live` sends grade B
 and above (`--min-grade`). Every signal is still journaled with its grade.
 
+### Live review, 2026-10-05 → 10-23, and the rules it added
+
+`atis-live` sent 27 directional alerts and 3 condors in 10 sessions. Directional result: **−0.25R,
+−₹16,174 option P&L**, 16 winners and 10 full stops. A same-day spot replay reproduces every live R.
+Three patterns stood out. Each was then tested on 2022–26 spot history, which the live alerts never
+saw:
+
+| Live pattern (Oct 2026) | Same cut on 2022–26 spot (R per trade, 4 symbol × window samples) | Rule |
+|---|---|---|
+| Entries before 09:45: 9 trades, 6 stops, −4.9R, −₹19,060. After 09:45: +4.6R | Before 09:45 −0.049 (914 trades), negative in 3 of 4 | `SessionTimes.first_entry = 09:45` |
+| First target under 1R away: small partial, then breakeven or full stop | −0.043 (2,055 trades), **negative in all 4** | `PlaybookParams.min_first_target_r = 1.0` |
+| A 5.7% premium stop sized to 7 lots lost 1.44× its planned risk | n/a (spot has no option prices) | Long options sized as if the stop were ≥ 10% of premium (`RiskParams.min_premium_stop_pct`) |
+
+B2 (80% rule) loses in 3 of 4 samples both before and after the first two gates, so it is now off
+by default (`eighty_percent_rule`). That choice came from history, not from the live alerts.
+
+The live result **"A3 is the best setup" did not survive**: A3 is −0.032R per trade on 2022–26 spot.
+It stays on, unchanged.
+
+Engine re-run with the new defaults (R before costs, loss limits on):
+
+| | NIFTY 2022-01 → 2025-09 | NIFTY 2025-10 → 2026-09 | BANKNIFTY 2022-01 → 2025-09 | BANKNIFTY 2025-10 → 2026-09 |
+|---|---|---|---|---|
+| Before | −0.5R, 1,388 trades, PF 1.00 | +8.3R, 364, PF 1.06 | −68.7R, 1,384, PF 0.88 | +31.0R, 340, PF 1.24 |
+| After | **+54.5R, 420, PF 1.24** | **+41.0R, 127, PF 1.69** | **−3.7R, 441, PF 0.99** | **+23.5R, 108, PF 1.44** |
+
+Of the 27 live alerts, 9 pass the new rules: **+4.99R, +₹1,539**. Replayed over all of October,
+including the sessions the runner missed (Oct 7, 15, 19, 21), the new rules give +6.5R on 16 signals.
+
+Caveats:
+
+- The rules came from 27 live trades. The 2022–25 window is the honest test, and it shows NIFTY
+  improving clearly. BANKNIFTY only reaches breakeven there.
+- Trade count falls by about 70%.
+- Still spot R before costs, not option P&L.
+- `setup_history.json` (alert confidence) is regenerated under the new defaults.
+
 ### Operator console (UI)
 
 `src/atis/console` (FastAPI) runs the engine in a background **replay worker** and serves the

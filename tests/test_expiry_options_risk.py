@@ -73,3 +73,12 @@ def test_long_option_stop_is_whichever_comes_first():
     sizing = size_trade(cand, plan, 65, RiskParams())
     assert sizing.risk_per_lot == 30 * 65
     assert sizing.lots == 2
+
+
+def test_tight_long_option_stop_is_sized_as_at_least_ten_percent_of_premium():
+    cand = Candidate("B3", "x", "B", Direction.SHORT, 22499, 22521, "", [], Structure.LONG_OPTION)
+    leg = OptionLeg("BUY", "PE", 22500, date(2026, 10, 19), delta=-0.45, premium=175)
+    plan = OptionPlan(Structure.LONG_OPTION, (leg,), leg.expiry, 175, 175 * 65, None)
+    sizing = size_trade(cand, plan, 65, RiskParams())
+    assert sizing.risk_per_lot == 17.5 * 65  # level stop is only 0.45 x 22 = 9.9 premium points
+    assert sizing.lots == 4  # 7 lots on the 9.9-point stop

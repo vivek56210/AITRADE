@@ -50,7 +50,7 @@ def b1_failed_gap(st: SessionState, ev: BarEvent) -> Candidate | None:
 
 def b2_eighty_percent_rule(st: SessionState, ev: BarEvent) -> Candidate | None:
     p = ev.period_closed
-    if st.prior is None or p is None or len(st.periods) < 2:
+    if not st.params.eighty_percent_rule or st.prior is None or p is None or len(st.periods) < 2:
         return None
     loc = st.open_loc
     if loc in (None, OpenLocation.INSIDE_VALUE):

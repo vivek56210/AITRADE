@@ -8,13 +8,14 @@ from atis.live.telegram import ConsoleNotifier, TelegramNotifier, find_chat_ids
 from atis.playbook import path_session
 from atis.playbook.models import Bar
 
-from conftest import TODAY, balanced_prior
+from conftest import DETECTOR_PARAMS, DETECTOR_TIMES, TODAY, balanced_prior
 
 A1_DAY = [("09:15", 24120), ("09:30", 24180), ("09:45", 24210), ("10:15", 24240), ("11:00", 24300)]
 
 
 def runner(tmp_path, bars, *, poll=60.0, notifier=None, holidays=frozenset()):
-    cfg = LiveConfig(symbols=("NIFTY",), state_dir=tmp_path, poll_seconds=poll)
+    cfg = LiveConfig(symbols=("NIFTY",), state_dir=tmp_path, poll_seconds=poll, params=DETECTOR_PARAMS,
+                     times=DETECTOR_TIMES)
     clock = VirtualClock(datetime.combine(TODAY, cfg.times.open) - timedelta(minutes=5))
     feed = ReplayFeed({"NIFTY": bars})
     notifier = notifier or ConsoleNotifier(stream=open("/dev/null", "w"))

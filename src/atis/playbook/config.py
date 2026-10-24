@@ -50,6 +50,9 @@ class SessionTimes:
     period_minutes: int = 30
     ib_periods: int = 2
     ib_end: time = time(10, 15)
+    # no entries in the opening auction: live Oct-2026 entries before 09:45 were 3/9 winners (-4.9R), and on
+    # 2022-26 spot they lost in 3 of 4 symbol x window samples
+    first_entry: time = time(9, 45)
     day_type_check: time = time(11, 30)
     a3_cutoff: time = time(14, 30)
     b2_cutoff: time = time(13, 30)
@@ -137,6 +140,11 @@ class PlaybookParams:
     early_series_sessions: int = 10
     event_buffer_minutes: int = 60
     require_dpoc_acceptance: bool = True
+    # skip directional trades whose first target is closer than this many R: on 2022-26 spot those lost in
+    # all four symbol x window samples (-88R over 2,055 trades); they bank a sliver, then stop out at breakeven
+    min_first_target_r: float = 1.0
+    # B2 (80% rule) lost in 3 of 4 symbol x window samples on 2022-26 spot, before and after the gates above
+    eighty_percent_rule: bool = False
     # R1 level + reaction (fixed before testing); off until a backtest supports it
     reaction_setups: bool = False
     reaction_start_minutes: int = 15
@@ -158,6 +166,9 @@ class RiskParams:
     weekly_loss_limit: float = 0.06
     max_trades_per_day: int = 3
     premium_stop_pct: float = 0.35
+    # size long options as if the premium stop were at least this wide: a 5% premium stop sized to 7 lots
+    # lost 1.44x its planned risk live (Oct-2026), because option noise at the stop dwarfs the stop itself
+    min_premium_stop_pct: float = 0.10
     assumed_atm_delta: float = 0.55
     assumed_itm_delta: float = 0.62
 

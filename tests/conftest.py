@@ -4,10 +4,15 @@ from datetime import date, datetime, time, timedelta
 
 import pytest
 
-from atis.playbook import NIFTY, PlaybookEngine, PlaybookParams, path_session
+from atis.playbook import NIFTY, PlaybookEngine, PlaybookParams, SessionTimes, path_session
 
 PRIOR_DAY = date(2026, 9, 30)
 TODAY = date(2026, 10, 1)
+
+# Detector tests check each setup's own rules, so the entry filters learned from live results (no entries
+# before 09:45, first target at least 1R, B2 off) are relaxed here and tested against the defaults on their own.
+DETECTOR_PARAMS = PlaybookParams(min_first_target_r=0.0, eighty_percent_rule=True)
+DETECTOR_TIMES = SessionTimes(first_entry=time(9, 15))
 
 
 def rotation(start: str, end: str, lo: float, hi: float, step: int = 15, start_high: bool = True):
@@ -29,7 +34,8 @@ def balanced_prior(d: date = PRIOR_DAY):
 
 @pytest.fixture
 def make_engine():
-    def _make(prior_date: date = PRIOR_DAY, params: PlaybookParams = PlaybookParams(), **kw) -> PlaybookEngine:
+    def _make(prior_date: date = PRIOR_DAY, params: PlaybookParams = DETECTOR_PARAMS, **kw) -> PlaybookEngine:
+        kw.setdefault("times", DETECTOR_TIMES)
         engine = PlaybookEngine(NIFTY, params, **kw)
         engine.run([balanced_prior(prior_date)], warmup=1)
         return engine

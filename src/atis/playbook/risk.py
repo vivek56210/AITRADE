@@ -33,8 +33,9 @@ def size_trade(cand: Candidate, plan: OptionPlan, lot_size: int, risk: RiskParam
             stops = [leg.premium * risk.premium_stop_pct]
             if move is not None and leg.delta is not None:
                 stops.append(abs(leg.delta) * move)
-            stop_pts = min(stops)
-            basis = f"premium stop {stop_pts:.1f} pts (min of {risk.premium_stop_pct:.0%} premium and level stop)"
+            stop_pts = max(min(stops), leg.premium * risk.min_premium_stop_pct)
+            basis = (f"premium stop {stop_pts:.1f} pts (min of {risk.premium_stop_pct:.0%} premium and level stop, "
+                     f"sized as at least {risk.min_premium_stop_pct:.0%})")
         elif move is not None:
             delta = risk.assumed_itm_delta if "one strike ITM" in plan.notes else risk.assumed_atm_delta
             stop_pts = delta * move

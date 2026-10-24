@@ -1,10 +1,11 @@
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 
-from atis.playbook import DayContext, PlaybookParams, path_session
+from atis.playbook import DayContext, PlaybookParams, SessionTimes, path_session
 from atis.playbook.backtest import simulate_directional
 from atis.playbook.models import Bar, Direction, OpenType, Structure, Target
 
-from conftest import TODAY, rotation
+from conftest import DETECTOR_PARAMS, TODAY, rotation
 
 
 def signals(report, setup_id):
@@ -36,9 +37,29 @@ def test_b2_eighty_percent_rule_long(make_engine):
     assert sig.option_plan.structure == Structure.DEBIT_SPREAD
 
 
+def test_no_entry_before_first_entry_time(make_engine):
+    s = path_session(TODAY, [("09:15", 24120), ("09:30", 24180), ("09:45", 24210), ("10:15", 24240),
+                             ("11:00", 24300)])
+    rep = make_engine(times=SessionTimes()).run_session(s)
+    assert not signals(rep, "A1")
+    assert any(sid == "A1" and "before the first entry time 09:45" in why for _, sid, why in rep.skipped)
+
+
+def test_first_target_closer_than_minimum_r_is_skipped(make_engine):
+    rep = make_engine(params=replace(DETECTOR_PARAMS, min_first_target_r=5.0)).run_session(
+        path_session(TODAY, a3_path()))
+    assert not signals(rep, "A3")
+    assert any(sid == "A3" and "first target only" in why for _, sid, why in rep.skipped)
+
+
+def test_b2_is_off_by_default(make_engine):
+    wps = [("09:15", 23880), ("09:22", 23985)] + rotation("09:32", "11:00", 23975, 23995, step=10)
+    rep = make_engine(params=replace(PlaybookParams(), min_first_target_r=0.0)).run_session(path_session(TODAY, wps))
+    assert not signals(rep, "B2")
+
 def test_c1_open_inside_value_iron_condor(make_engine):
     wps = rotation("09:15", "15:30", 23985, 24020, step=10)
-    rep = make_engine(params=PlaybookParams(narrow_ib_ratio=0.1)).run_session(path_session(TODAY, wps))
+    rep = make_engine(params=replace(DETECTOR_PARAMS, narrow_ib_ratio=0.1)).run_session(path_session(TODAY, wps))
     (sig,) = signals(rep, "C1")
     assert sig.ts == datetime(2026, 10, 1, 10, 15)
     strikes = [(l.side, l.right, l.strike) for l in sig.option_plan.legs]
@@ -144,7 +165,7 @@ def test_event_within_the_hour_blocks_entry(make_engine):
 
 def test_vix_rising_blocks_premium_selling(make_engine):
     wps = rotation("09:15", "15:30", 23985, 24020, step=10)
-    engine = make_engine(params=PlaybookParams(narrow_ib_ratio=0.1))
+    engine = make_engine(params=replace(DETECTOR_PARAMS, narrow_ib_ratio=0.1))
     rep = engine.run_session(path_session(TODAY, wps), DayContext(vix_rising=True))
     assert not signals(rep, "C1")
 

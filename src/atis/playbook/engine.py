@@ -290,6 +290,13 @@ class PlaybookEngine:
     def _gate(self, cand: Candidate) -> str | None:
         st, t, now = self._st, self.times, self._st.now
         short = cand.structure.is_short_premium
+        if cand.horizon == "intraday" and now < st.at(t.first_entry):
+            return f"before the first entry time {t.first_entry:%H:%M} (opening auction)"
+        if cand.direction.sign and cand.stop is not None and cand.targets:
+            risk = abs(cand.entry - cand.stop)
+            room = abs(cand.targets[0].price - cand.entry)
+            if risk > 0 and room < self.params.min_first_target_r * risk - 1e-9:
+                return f"first target only {room / risk:.2f}R away (minimum {self.params.min_first_target_r:g}R)"
         if self._trades >= self.risk.max_trades_per_day:
             return "max trades per day reached"
         limit = self.loss_limit_hit()

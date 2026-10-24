@@ -9,7 +9,7 @@ from atis.live.optionquotes import OptionChain, OptionDesk, OptionPrices, option
 from atis.playbook import NIFTY, PlaybookEngine, path_session
 from atis.playbook.options import bs_price_delta, implied_vol
 
-from conftest import TODAY, balanced_prior
+from conftest import DETECTOR_PARAMS, DETECTOR_TIMES, TODAY, balanced_prior
 
 A1_DAY = [("09:15", 24120), ("09:30", 24180), ("09:45", 24210), ("10:15", 24240), ("11:00", 24300)]
 EXP = date(2026, 10, 6)
@@ -43,7 +43,7 @@ def fake_prices(iv=0.12):
 
 
 def a1_signal():
-    eng = PlaybookEngine(NIFTY)
+    eng = PlaybookEngine(NIFTY, DETECTOR_PARAMS, DETECTOR_TIMES)
     eng.run([balanced_prior()], warmup=1)
     rep = eng.run_session(path_session(TODAY, A1_DAY))
     return next(s for s in rep.signals if s.setup_id == "A1"), rep
@@ -82,6 +82,17 @@ def test_quote_long_option_and_rupee_pnl():
     pnl = option_pnl(q, out.exits, prices, TODAY, datetime(2026, 10, 1, 16, 0))
     assert out.r_multiple > 0 and pnl > 0
 
+
+
+def test_tight_premium_stop_is_sized_as_at_least_ten_percent():
+    from dataclasses import replace
+    sig, _ = a1_signal()
+    prices, _ = fake_prices()
+    tight = replace(sig, stop=sig.entry - 2)  # a 2-point index stop moves the premium about 1 point
+    q = quote_signal(tight, OptionChain.from_rows(master_rows()), prices, datetime(2026, 10, 1, 16, 0))
+    assert q.entry - q.stop < 0.1 * q.entry
+    assert q.risk_per_lot == pytest.approx(0.1 * q.entry * 65, abs=0.01)
+    assert q.lots == int(5000 // q.risk_per_lot)
 
 def test_quote_unavailable_returns_none_and_desk_never_raises():
     sig, _ = a1_signal()
