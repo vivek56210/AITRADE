@@ -9,8 +9,10 @@
 #   - clones the code to /opt/atis, data lives in /var/lib/atis, secrets in /etc/atis/atis.env (root/atis, 640)
 #   - atis-console.service : the web console on 127.0.0.1:8765 (never exposed directly)
 #   - atis-live.timer      : starts atis-live.service at 08:55 IST Mon-Fri; it sends Telegram alerts and exits at 15:31
+#   - atis-watchdog.timer  : every 10 min, Telegram if a job is stale or failed; pings HEALTHCHECK_URL if set
+#   - the crypto bot is installed separately: sudo bash /opt/atis/deploy/oracle/enable-crypto.sh
 #   - Caddy serves https://<public-ip>.sslip.io with a login, and the VM firewall opens ports 80/443
-# Alerts only: nothing here can place an order.
+# Alerts only: nothing this script installs can place an order (the crypto bot is a separate opt-in).
 set -euo pipefail
 
 REPO_URL="${ATIS_REPO_URL:-https://github.com/vivek56210/AITRADE.git}"
@@ -91,18 +93,31 @@ if [ -z "$CHAT" ]; then
 fi
 LIVE_ARGS="$(env_get ATIS_LIVE_ARGS)"
 LIVE_ARGS="${LIVE_ARGS:---symbols NIFTY,BANKNIFTY}"
+HC_URL="$(env_get HEALTHCHECK_URL)"
+if [ -z "$HC_URL" ]; then
+  echo "Optional: a dead-man's switch alerts you when this whole VM stops (nothing on the VM can)."
+  echo "Create a free check at https://healthchecks.io (period 10 min, grace 20 min), add its Telegram"
+  echo "or email integration, and paste the ping URL here. Press Enter to skip."
+  HC_URL="$(ask 'Ping URL: ')"
+  [ -z "$HC_URL" ] || [[ "$HC_URL" =~ ^https://[^[:space:]]+$ ]] || die "the ping URL must start with https://"
+fi
 umask 027
+# keys this script manages are rewritten; anything else already in the file (Dhan, crypto) is kept
+KEEP="$( [ -f "$ENV_FILE" ] && grep -vE '^(#|TELEGRAM_BOT_TOKEN=|TELEGRAM_CHAT_ID=|ATIS_LIVE_ARGS=|HEALTHCHECK_URL=|PYTHONUNBUFFERED=)' "$ENV_FILE" | grep -v '^$' || true)"
 cat > "$ENV_FILE" <<EOF
 # ATIS secrets and options - readable by root and the atis service user only.
 TELEGRAM_BOT_TOKEN=$TOKEN
 TELEGRAM_CHAT_ID=$CHAT
 # Extra atis-live options, e.g. --capital 500000 --risk-pct 1 --disable B1,C2
 ATIS_LIVE_ARGS="$LIVE_ARGS"
+# Dead-man's switch ping (healthchecks.io); empty = off
+HEALTHCHECK_URL=$HC_URL
 PYTHONUNBUFFERED=1
 EOF
+[ -z "$KEEP" ] || printf '%s\n' "$KEEP" >> "$ENV_FILE"
 chown root:atis "$ENV_FILE" && chmod 640 "$ENV_FILE"
 umask 022
-unset TOKEN
+unset TOKEN KEEP
 
 UI_USER="atis"
 if [ -s "$CADDY_AUTH_FILE" ] && [ "$(ask 'A console password is already set. Change it? [y/N] ')" != y ]; then
@@ -184,9 +199,42 @@ Unit=atis-live.service
 WantedBy=timers.target
 EOF
 
+cat > /etc/systemd/system/atis-watchdog.service <<EOF
+[Unit]
+Description=ATIS watchdog: stale or failed jobs to Telegram, plus the external dead-man's switch ping
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=atis
+Group=atis
+WorkingDirectory=$DATA_DIR
+EnvironmentFile=$ENV_FILE
+ExecStart=$VENV/atis-watchdog --live-dir $DATA_DIR/data/live
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=$DATA_DIR
+EOF
+
+cat > /etc/systemd/system/atis-watchdog.timer <<EOF
+[Unit]
+Description=Run the ATIS watchdog every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Unit=atis-watchdog.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
 ln -sf "$APP_DIR/deploy/oracle/update.sh" /usr/local/bin/atis-update
 systemctl daemon-reload
-systemctl enable --now atis-console.service atis-live.timer >/dev/null
+systemctl enable --now atis-console.service atis-live.timer atis-watchdog.timer >/dev/null
 systemctl restart atis-console.service
 
 # ---------------------------------------------------------------- HTTPS

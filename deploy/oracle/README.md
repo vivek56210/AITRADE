@@ -1,5 +1,32 @@
 # Run ATIS on an Oracle Cloud Always Free VM
 
+## Why move: the plan
+
+In Oct 5–23 the NSE runner ran on a laptop. It missed Oct 7, 15, 19 and 21 and stopped early on
+Oct 22, which cost five of fourteen sessions. A laptop sleeps, loses Wi-Fi and reboots for updates.
+The fix is to run everything on an always-on server and to be told when anything stops.
+
+| Step | Who | Time | Result |
+|---|---|---|---|
+| 1. Push branch `claude/sweet-dirac-l8xhkg` to GitHub | You (or ask Claude) | 1 min | The VM installs exactly this code |
+| 2. Create the Oracle account and VM (sections 1–5 below) | You | ~30 min | An always-free Ubuntu VM in Mumbai or Hyderabad |
+| 3. Run `setup.sh` (section 6) | You, on the VM | 10 min | NSE alerts, console, **watchdog**, HTTPS |
+| 4. Create a free [healthchecks.io](https://healthchecks.io) check and paste its URL when setup asks | You | 5 min | You're alerted even if **the whole VM** dies |
+| 5. `sudo bash /opt/atis/deploy/oracle/enable-crypto.sh` in **paper** mode | You, on the VM | 2 min | Crypto bot runs daily at 05:35 IST |
+| 6. Upgrade the Oracle account to Pay As You Go, with a ₹100 budget alert | You | 5 min | Oracle won't reclaim the "idle" free VM |
+| 7. Stop the laptop runner | You | — | One source of alerts, not two |
+
+How each failure is now caught:
+
+| Failure | Caught by | You hear |
+|---|---|---|
+| A job crashes | systemd restarts it (`Restart=on-failure`); the watchdog sees a failed unit | Telegram within 10 min |
+| The VM was down at a scheduled time | Timers have `Persistent=true`, so a missed run starts at boot | The normal messages, late |
+| NSE runner not running in market hours | Watchdog: no fresh heartbeat 09:25–15:25 IST on weekdays | Telegram, once a day, plus "resolved" |
+| Crypto bot stalled or halted | Watchdog: heartbeat older than 2.5 h, or a halt flag | Telegram |
+| The whole VM, network or Oracle region down | healthchecks.io stops receiving its 10-minute ping | Its Telegram or email alert |
+| Data feed down | Each job already reports stale data | Telegram |
+
 What you get when you're done:
 
 - **Telegram alerts** every trading day, starting automatically at 08:55 IST (Mon–Fri):
@@ -11,7 +38,8 @@ What you get when you're done:
   - whether the runner is alive
   - today's chart with levels and signals
   - the paper-trade journal, with results by setup and by day
-- **Alerts only.** Nothing on the VM can place an order, and no broker credentials are stored there.
+- **NSE: alerts only.** Nothing on the NSE side can place an order, and it needs no broker credentials.
+  The optional crypto bot is the only part that can trade, and only once you enable it (see below).
 
 Total time is about 30 minutes, mostly in the Oracle sign-up. You only need a browser: every
 command runs in Oracle **Cloud Shell**.
@@ -146,6 +174,51 @@ To change the token or password, run `sudo bash atis-setup.sh` again. It keeps e
 Add `--min-grade A+` to `ATIS_LIVE_ARGS` to receive only A+ signals. Out of sample, A+ did not beat
 B, so the default is B.
 
+## Watchdog and dead-man's switch
+
+`atis-watchdog.timer` runs every 10 minutes. It checks:
+
+- the NSE runner's heartbeat during market hours
+- the crypto bot's heartbeat
+- any failed `atis-*` service
+
+Each problem goes to Telegram once a day, with a second message when it clears. On an NSE holiday
+the runner correctly does not start; the watchdog says so once, and you can ignore it.
+
+The watchdog also pings `HEALTHCHECK_URL` on every run, with `/fail` appended when it found a
+problem. Set up healthchecks.io like this:
+
+1. Create a free account and a check with **period 10 minutes, grace 20 minutes**.
+2. Under Integrations, add Telegram or email.
+3. Paste the check's ping URL when `setup.sh` asks. Or add `HEALTHCHECK_URL=https://hc-ping.com/…`
+   to `/etc/atis/atis.env` yourself.
+
+```bash
+systemctl list-timers atis-watchdog.timer
+sudo -u atis bash -c 'set -a; . /etc/atis/atis.env; /opt/atis/.venv/bin/atis-watchdog --live-dir /var/lib/atis/data/live --dry-run'
+```
+
+## Crypto trend bot (BTC/ETH on Delta Exchange India)
+
+Read `src/docs/12-CRYPTO-STRATEGY.md` first. It covers what the strategy does, its history and its
+risk limits.
+
+```bash
+sudo bash /opt/atis/deploy/oracle/enable-crypto.sh   # asks: paper (default) / testnet / live
+sudo atis-crypto-ctl status                           # equity, positions, risk state
+sudo atis-crypto-ctl flatten                          # close everything now
+sudo atis-crypto-ctl resume                           # after a kill-switch halt, once you've reviewed it
+```
+
+| Time | What happens |
+|---|---|
+| 05:35 IST daily (00:05 UTC) | Rebalance: one Telegram message with each coin's position, trend, volatility and 20-day volume-profile levels |
+| :30 every hour | Risk watch. At −8% in a day or −30% from peak it closes everything, halts and tells you |
+
+Go from **paper → testnet → small live** using the gate in the strategy document. Re-running
+`enable-crypto.sh` switches mode. For live, create the Delta API key with **trade permission only,
+never withdrawal**.
+
 ## Optional: record real NSE order flow (Dhan)
 
 This builds a history of NIFTY/BANKNIFTY futures trades split into buyer- and seller-initiated
@@ -189,4 +262,8 @@ lapses, the recorder stops and tells you on Telegram. Data lands in `/var/lib/at
 - The password is stored only as a bcrypt hash, in `/etc/caddy/atis-auth`.
 - Services run as the unprivileged `atis` user, with a read-only system and no access to home
   directories.
-- No broker (Dhan) credentials are on the VM, and there is no order-placement code.
+- The NSE side is alerts only: no Dhan credentials are needed for it, and it has no order code.
+- The crypto bot in `paper` mode has no credentials either.
+- In `testnet` or `live` mode it holds a Delta API key in `/etc/atis/atis.env`. It places orders
+  only through `atis-crypto`, and live orders need `ATIS_CRYPTO_LIVE=I_ACCEPT_THE_RISK` in that
+  file. Give the key trade permission only, never withdrawal.
